@@ -8,7 +8,9 @@
 
 `tests/fixtures/mock-server/` 提供最小日志和模组数据。mock adapter 在内存中模拟服务状态、玩家、指标、备份和操作结果；helper 测试使用 pytest 临时目录及 fake runner，不访问真实世界。
 
-集成测试使用临时目录、临时 SQLite 和无网络 fake AI provider。真实 AI 测试必须显式启用、限制为少量请求，并使用轮换后的测试密钥。
+集成测试使用临时目录、临时 SQLite 和无网络 fake AI provider。Playwright 使用独立 mock 进程、临时数据库和测试账号，不读取生产 profile。真实 AI 测试必须显式启用、限制为少量请求，并使用轮换后的测试密钥。
+
+首次运行浏览器验收前执行 `npm --prefix apps/web exec -- playwright install chromium`，之后使用 `npm --prefix apps/web run test:e2e`。CI 会安装 Chromium 及必要的 Linux 系统依赖。
 
 ## 单元测试
 
@@ -31,6 +33,7 @@
 - 写入保留所有者/模式并原子替换。
 - 备份归档拒绝绝对路径、`..`、设备文件和危险软链接。
 - restore 任一步失败都会保留 recovery 目录并尝试恢复服务。
+- 备份凭据在归档替换、内容变更、软链接或不可信目录下必须失效。
 
 ## API 集成测试
 
@@ -50,11 +53,12 @@
 - 页面刷新后会话、主题和操作进度正确恢复。
 - 手机导航抽屉、主题切换和中风险确认弹窗已完成交互验收；取消后服务状态不变。
 - 浏览器控制台无 warning/error；公开截图只使用 mock 服务器和虚构玩家。
+- Playwright CI 实际覆盖登录后刷新、中风险取消、高风险二次确认、备份完整校验、移动导航、主题持久化和退出。
 
-## 0.4.0 Alpha 基线
+## 0.4.1 Alpha 基线
 
-- 后端：126 个 pytest 测试通过，Ruff 与 strict mypy 通过，覆盖率 79%。
-- 前端：12 个 Vitest 文件、22 个测试通过，TypeScript/Vite 构建通过。
+- 后端：137 个 pytest 测试通过，Ruff 与 strict mypy 通过，覆盖率 79%。
+- 前端：12 个 Vitest 文件、24 个测试通过，2 个 Playwright Chromium 场景通过，TypeScript/Vite 构建通过。
 - 运行依赖：`npm audit --omit=dev` 为 0 个已知漏洞。
 - 部署资源：全部 Shell 脚本通过 `bash -n`，运行 profile 的权限、拒绝覆盖和密钥不回显均有自动测试。
 

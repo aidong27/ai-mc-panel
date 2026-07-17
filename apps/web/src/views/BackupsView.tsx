@@ -5,6 +5,7 @@ import {
   CircleAlert,
   Clock,
   DatabaseBackup,
+  FileCheck2,
   HardDrive,
   RefreshCw,
   RotateCcw,
@@ -29,7 +30,10 @@ function verification(backup: BackupInfo): { label: string; className: string; t
     return { label: "已完整校验", className: "small-badge success", title: "备份内容已读取并通过校验" };
   }
   if (backup.verification_status === "checksum_present") {
-    return { label: "校验文件就绪", className: "small-badge neutral", title: "恢复前会再计算完整哈希并检查压缩包" };
+    return { label: "校验文件就绪", className: "small-badge neutral", title: "尚未完整读取备份；可以现在校验，恢复前也会强制校验" };
+  }
+  if (backup.verification_status === "invalid") {
+    return { label: "校验文件无效", className: "small-badge warning", title: "校验文件格式不正确，不能安全恢复" };
   }
   return { label: "缺少校验文件", className: "small-badge warning", title: "不建议使用该备份恢复" };
 }
@@ -53,6 +57,10 @@ function canRestore(backup: BackupInfo): boolean {
   return backup.verified
     || backup.verification_status === "verified"
     || backup.verification_status === "checksum_present";
+}
+
+function isVerified(backup: BackupInfo): boolean {
+  return backup.verified || backup.verification_status === "verified";
 }
 
 export function BackupsView({ refreshKey, operationBusy, onOperation }: BackupsViewProps) {
@@ -115,6 +123,9 @@ export function BackupsView({ refreshKey, operationBusy, onOperation }: BackupsV
         <p className="notice warning"><Clock size={17} />自动备份计划当前未运行，下一次不会自动执行。</p>
       )}
       <p className="notice neutral"><Clock size={17} />当前采用冷备份：短暂停服保存一致存档，通常 1 到 2 分钟，完成后自动恢复。</p>
+      {backups.some((backup) => backup.verification_status === "checksum_present") && (
+        <p className="notice neutral"><FileCheck2 size={17} />“校验文件就绪”表示可以开始检查，不等于已经读完备份；完整校验不会停服或修改世界。</p>
+      )}
 
       <div className="backups-layout">
         <section className="panel-section backup-list-section">
@@ -123,12 +134,19 @@ export function BackupsView({ refreshKey, operationBusy, onOperation }: BackupsV
             <div className="backup-list">
               {backups.map((backup) => {
                 const state = verification(backup);
+                const fullyVerified = isVerified(backup);
+                const canVerify = backup.verification_status === "checksum_present";
                 return (
                   <div key={backup.id}>
-                    <span className="backup-status">{backup.verified ? <CheckCircle2 size={19} /> : <Archive size={19} />}</span>
+                    <span className="backup-status">{fullyVerified ? <CheckCircle2 size={19} /> : <Archive size={19} />}</span>
                     <span><strong>{formatTimestamp(backup.created_at)}</strong><small>{size(backup.size_bytes)} · {backup.kind === "cold" ? "一致性冷备" : backup.kind}</small></span>
                     <span className={state.className} title={state.title}>{state.label}</span>
-                    <button className="button secondary compact-button" disabled={operationBusy || !canRestore(backup)} onClick={() => void onOperation("restore_backup", { backup_id: backup.id })}><RotateCcw size={16} />恢复</button>
+                    <span className="backup-actions">
+                      {!fullyVerified && (
+                        <button className="button secondary compact-button" title={canVerify ? "读取整个备份并确认内容完整" : "需要有效的校验文件"} disabled={operationBusy || !canVerify} onClick={() => void onOperation("verify_backup", { backup_id: backup.id })}><FileCheck2 size={16} />完整校验</button>
+                      )}
+                      <button className="button secondary compact-button" disabled={operationBusy || !canRestore(backup)} onClick={() => void onOperation("restore_backup", { backup_id: backup.id })}><RotateCcw size={16} />{fullyVerified ? "恢复" : "校验并恢复"}</button>
+                    </span>
                   </div>
                 );
               })}

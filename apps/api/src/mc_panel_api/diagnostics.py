@@ -97,8 +97,8 @@ def build_diagnostics(
             backup_age_hours = max(0.0, (current - created).total_seconds() / 3600)
         verification = str(latest_backup.get("verification_status") or "missing")
         too_old = backup_age_hours is None or backup_age_hours > 48
-        missing_checksum = verification == "missing"
-        backup_tone = "warning" if too_old or missing_checksum else "good"
+        unusable_checksum = verification in {"missing", "invalid"}
+        backup_tone = "warning" if too_old or unusable_checksum else "good"
         if backup_age_hours is None:
             backup_title = "备份时间无法确认"
         elif backup_age_hours < 1:
@@ -107,11 +107,14 @@ def build_diagnostics(
             backup_title = f"最近备份在 {round(backup_age_hours)} 小时前"
         else:
             backup_title = "备份已超过 48 小时"
-        backup_detail = (
-            "校验文件已就绪，恢复时仍会再做完整校验。"
-            if verification in {"checksum_present", "verified"}
-            else "没有找到校验文件，不建议使用该备份恢复。"
-        )
+        if verification == "verified":
+            backup_detail = "备份已完成内容与结构校验；恢复时仍会再次确认。"
+        elif verification == "checksum_present":
+            backup_detail = "校验文件已就绪，恢复时仍会再做完整校验。"
+        elif verification == "invalid":
+            backup_detail = "校验文件格式无效，不建议使用该备份恢复。"
+        else:
+            backup_detail = "没有找到校验文件，不建议使用该备份恢复。"
     runtime = backup_status or {}
     last_result = runtime.get("last_result")
     if last_result == "failed":

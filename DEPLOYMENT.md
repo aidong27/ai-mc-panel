@@ -55,8 +55,8 @@ sudo env \
 在受信任开发机执行：
 
 ```bash
-./deploy/scripts/build-release.sh 0.4.0
-shasum -a 256 -c release/mc-panel-0.4.0.tar.gz.sha256
+./deploy/scripts/build-release.sh 0.4.1
+shasum -a 256 -c release/mc-panel-0.4.1.tar.gz.sha256
 ```
 
 构建会执行后端格式、lint、strict mypy、pytest、前端测试和生产构建，然后生成 Linux x86_64 离线 wheelhouse、文件 SHA256 清单和归档。`.env`、数据库、日志、证书、密钥、本地生产记录和历史发布包会被排除。
@@ -81,7 +81,7 @@ sudo env \
   MC_PANEL_BACKUP_TIMER=minecraft-backup.timer \
   MC_PANEL_CONSOLE_USER=minecraft \
   MC_PANEL_CONSOLE_SCREEN=minecraft \
-  ./deploy/scripts/install-readonly.sh /tmp/mc-panel-release/0.4.0 0.4.0
+  ./deploy/scripts/install-readonly.sh /tmp/mc-panel-release/0.4.1 0.4.1
 ```
 
 安装会创建：
@@ -143,7 +143,7 @@ sudo env MC_PANEL_APPROVE_UPDATE=YES \
   /opt/mc-panel/current/deploy/scripts/update.sh /tmp/mc-panel-release/0.4.1 0.4.1
 
 sudo env MC_PANEL_APPROVE_ROLLBACK=YES \
-  /opt/mc-panel/current/deploy/scripts/rollback.sh 0.4.0
+  /opt/mc-panel/current/deploy/scripts/rollback.sh 0.4.1
 ```
 
 更新前使用 SQLite backup API 创建一致副本和 SHA256，保存旧 helper、systemd unit、运行路径 drop-in 与 release。健康检查失败会自动恢复旧 release 和数据库。更新只重启面板。

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import gzip
+import hashlib
 import json
 import subprocess
 import zipfile
@@ -282,6 +283,96 @@ def test_backup_sidecar_presence_is_not_reported_as_hash_verified(
 
     assert result[0]["verified"] is False
     assert result[0]["verification_status"] == "checksum_present"
+
+
+def _write_verification_marker(archive: Path, digest: str) -> Path:
+    backup_id = "backup_" + hashlib.sha256(archive.name.encode()).hexdigest()[:12]
+    archive_stat = archive.stat()
+    root = archive.parent / systemd_module.VERIFICATION_DIRECTORY
+    root.mkdir(mode=0o755)
+    root.chmod(0o755)
+    marker = root / f"{backup_id}.json"
+    marker.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "backup_id": backup_id,
+                "filename": archive.name,
+                "size_bytes": archive_stat.st_size,
+                "mtime_ns": archive_stat.st_mtime_ns,
+                "ctime_ns": archive_stat.st_ctime_ns,
+                "device": archive_stat.st_dev,
+                "inode": archive_stat.st_ino,
+                "sha256": digest,
+                "verified_at": "2026-07-17T08:00:00+00:00",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    marker.chmod(0o644)
+    return marker
+
+
+def test_matching_root_helper_marker_is_reported_as_verified(
+    tmp_path: Path, settings: Settings
+) -> None:
+    archive = tmp_path / "minecraft-20260717-cold.tar.gz"
+    archive.write_bytes(b"fixture")
+    digest = hashlib.sha256(archive.read_bytes()).hexdigest()
+    Path(str(archive) + ".sha256").write_text(f"{digest}  {archive.name}\n", encoding="ascii")
+    _write_verification_marker(archive, digest)
+    settings = replace(settings, backup_root=tmp_path)
+
+    result = SystemdForgeAdapter(settings).list_backups()
+
+    assert result[0]["verified"] is True
+    assert result[0]["verification_status"] == "verified"
+
+
+def test_archive_change_invalidates_the_persistent_verification_marker(
+    tmp_path: Path, settings: Settings
+) -> None:
+    archive = tmp_path / "minecraft-20260717-cold.tar.gz"
+    archive.write_bytes(b"fixture")
+    digest = hashlib.sha256(archive.read_bytes()).hexdigest()
+    Path(str(archive) + ".sha256").write_text(f"{digest}  {archive.name}\n", encoding="ascii")
+    _write_verification_marker(archive, digest)
+    archive.write_bytes(b"changed archive content")
+    settings = replace(settings, backup_root=tmp_path)
+
+    result = SystemdForgeAdapter(settings).list_backups()
+
+    assert result[0]["verified"] is False
+    assert result[0]["verification_status"] == "checksum_present"
+
+
+def test_malformed_backup_checksum_is_reported_as_invalid(
+    tmp_path: Path, settings: Settings
+) -> None:
+    archive = tmp_path / "minecraft-20260717-cold.tar.gz"
+    archive.write_bytes(b"fixture")
+    Path(str(archive) + ".sha256").write_text("not-a-digest\n", encoding="ascii")
+    settings = replace(settings, backup_root=tmp_path)
+
+    result = SystemdForgeAdapter(settings).list_backups()
+
+    assert result[0]["verified"] is False
+    assert result[0]["verification_status"] == "invalid"
+
+
+def test_backup_checksum_symlink_is_reported_as_invalid(tmp_path: Path, settings: Settings) -> None:
+    archive = tmp_path / "minecraft-20260717-cold.tar.gz"
+    archive.write_bytes(b"fixture")
+    external = tmp_path / "external.sha256"
+    external.write_text("0" * 64 + "\n", encoding="ascii")
+    Path(str(archive) + ".sha256").symlink_to(external)
+    settings = replace(settings, backup_root=tmp_path)
+
+    result = SystemdForgeAdapter(settings).list_backups()
+
+    assert result[0]["verified"] is False
+    assert result[0]["verification_status"] == "invalid"
 
 
 def test_corrupt_player_json_scalar_is_treated_as_empty(

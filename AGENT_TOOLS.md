@@ -19,6 +19,7 @@ AI 只看到这里定义的工具，不拥有 Shell、文件系统、sudo、数�
 | `read_recent_operations` | 低 | 否 | 最近 1 到 20 条受控操作摘要 |
 | `send_announcement` | 低 | 否 | 纯文本游戏公告 |
 | `create_backup` | 低 | 否 | 当前服会短暂停机，执行前必须展示影响 |
+| `verify_backup` | 低 | 否 | 完整读取指定备份并记录可失效校验凭据，不停服 |
 | `start_server` | 中 | 是 | 验证服务当前为 stopped |
 | `stop_server` | 中 | 是 | 展示在线玩家和停服影响 |
 | `restart_server` | 中 | 是 | 保存世界、广播、重启并验证 |
@@ -62,6 +63,8 @@ MVP 不注册 `delete_world`、`replace_server_core`、`upgrade_minecraft`、`ch
 首版可写键仅包括 `difficulty`、`gamemode`、`max-players`、`pvp`、`view-distance`、`simulation-distance`、`white-list` 和 `motd`。每个键有独立类型和范围。`online-mode`、端口、RCON、level-name、JVM 参数不在普通工具中。
 
 `send_announcement`：只接受 1 到 200 个可打印字符，拒绝换行、控制字符、以 `/` 开头和包含 secret 模式的文本。
+
+`verify_backup`：只接受后端生成的 `backup_id`。AI 不能提供路径、文件名或校验值；成功结果必须来自 helper 对归档全文和结构的实际读取。
 
 `install_mod`：只接受后端生成的 `upload_id`。上传对象必须是单个 `.jar`、通过 ZIP 结构检查、大小限制、SHA256 和 Forge/Fabric/NeoForge/Quilt 元数据识别；AI 不能提交路径或 URL。
 

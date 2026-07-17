@@ -94,6 +94,16 @@ SPECS: dict[str, ToolSpec] = {
         True,
         False,
     ),
+    "verify_backup": ToolSpec(
+        "verify_backup",
+        RiskLevel.LOW,
+        RestoreBackupParams,
+        "完整校验备份",
+        "确认备份文件完整、结构安全，而且仍与校验文件一致。",
+        "只读取备份并写入小型校验凭据，不停服、不修改世界。",
+        False,
+        False,
+    ),
     "edit_server_property": ToolSpec(
         "edit_server_property",
         RiskLevel.MEDIUM,
