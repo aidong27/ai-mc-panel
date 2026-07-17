@@ -1,0 +1,48 @@
+name: Bug report
+description: 报告可复现的问题，请先移除服务器与玩家敏感信息。
+title: "[Bug] "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        请勿提交密码、API key、Cookie、SSH 材料、公网 IP、玩家 IP、完整日志或世界文件。安全漏洞请使用 Private vulnerability reporting。
+  - type: input
+    id: version
+    attributes:
+      label: 面板版本
+      placeholder: 0.4.0
+    validations:
+      required: true
+  - type: dropdown
+    id: adapter
+    attributes:
+      label: Adapter
+      options: [mock, systemd, other]
+    validations:
+      required: true
+  - type: textarea
+    id: behavior
+    attributes:
+      label: 发生了什么
+      description: 描述预期结果、实际结果和通俗错误信息。
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: 最小复现步骤
+    validations:
+      required: true
+  - type: textarea
+    id: doctor
+    attributes:
+      label: 脱敏后的 doctor 输出
+      render: shell
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: 隐私确认
+      options:
+        - label: 我已移除凭据、地址、玩家 IP、真实日志和世界数据。
+          required: true

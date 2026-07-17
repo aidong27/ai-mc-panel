@@ -1,0 +1,17 @@
+{
+    default_sni {$MC_PANEL_HOST}
+}
+
+{$MC_PANEL_HOST} {
+    encode gzip
+    reverse_proxy 127.0.0.1:{$MC_PANEL_PORT:18080}
+
+    header {
+        Strict-Transport-Security "max-age=31536000"
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "DENY"
+        Referrer-Policy "no-referrer"
+        X-Robots-Tag "noindex, nofollow, noarchive"
+        -Server
+    }
+}

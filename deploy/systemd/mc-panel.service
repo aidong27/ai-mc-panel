@@ -1,0 +1,54 @@
+[Unit]
+Description=Fangkuai Guanjia Minecraft management panel
+Documentation=file:/opt/mc-panel/current/DEPLOYMENT.md
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=mc-panel
+Group=mc-panel
+WorkingDirectory=/opt/mc-panel/current
+EnvironmentFile=/etc/mc-panel/panel.env
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/opt/mc-panel/current/.venv/bin/mc-panel-api
+Restart=on-failure
+RestartSec=5s
+TimeoutStartSec=30s
+TimeoutStopSec=20s
+UMask=0077
+
+# Read-only deployment starts with setuid transitions blocked. The separately
+# reviewed write-access drop-in changes only this setting.
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectClock=true
+ProtectHostname=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+RemoveIPC=true
+SystemCallArchitectures=native
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+StateDirectory=mc-panel
+StateDirectoryMode=0700
+RuntimeDirectory=mc-panel
+RuntimeDirectoryMode=0700
+ReadWritePaths=/var/lib/mc-panel
+ReadWritePaths=/run/mc-panel
+# enable-writes.sh generates a root-owned runtime-paths.conf from helper.json.
+# No Minecraft path is writable in the base read-only deployment.
+
+[Install]
+WantedBy=multi-user.target

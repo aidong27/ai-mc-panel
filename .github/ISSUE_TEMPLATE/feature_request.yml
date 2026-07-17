@@ -1,0 +1,29 @@
+name: Feature request
+description: 提议一个安全、易懂的面板能力。
+title: "[Feature] "
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: 用户遇到的问题
+      description: 请从不懂 Linux 的 Minecraft 管理员角度描述。
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: 建议体验
+    validations:
+      required: true
+  - type: dropdown
+    id: risk
+    attributes:
+      label: 可能风险
+      options: [只读, 修改配置, 停服或重启, 修改世界或备份, 系统权限或网络, 不确定]
+    validations:
+      required: true
+  - type: textarea
+    id: rollback
+    attributes:
+      label: 如何确认和回滚

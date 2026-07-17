@@ -1,0 +1,20 @@
+[
+  {
+    "id": "mod_critters",
+    "name": "Critters and Companions",
+    "version": "2.2.2",
+    "loader": "Forge",
+    "filename": "crittersandcompanions-forge-2.2.2.jar",
+    "enabled": true,
+    "duplicate": false
+  },
+  {
+    "id": "mod_modernfix",
+    "name": "ModernFix",
+    "version": "5.24.3",
+    "loader": "Forge",
+    "filename": "modernfix-forge-5.24.3.jar",
+    "enabled": true,
+    "duplicate": false
+  }
+]

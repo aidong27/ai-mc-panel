@@ -1,0 +1,16 @@
+{
+  "server_root": "/srv/minecraft/server",
+  "backup_root": "/srv/minecraft/backups",
+  "quarantine_root": "/var/lib/mc-panel/quarantine",
+  "recovery_root": "/srv/minecraft/panel-recovery",
+  "lock_file": "/run/lock/mc-panel-action.lock",
+  "backup_command": "/usr/local/bin/minecraft-backup",
+  "timer_dropin": "/etc/systemd/system/minecraft-backup.timer.d/mc-panel.conf",
+  "backup_service_dropin": "/etc/systemd/system/minecraft-backup.service.d/mc-panel.conf",
+  "server_service": "minecraft.service",
+  "backup_timer": "minecraft-backup.timer",
+  "server_port": 25565,
+  "console_user": "minecraft",
+  "console_screen_name": "minecraft",
+  "backup_archive_glob": "minecraft-*.tar.gz"
+}
