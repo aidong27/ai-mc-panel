@@ -1,8 +1,12 @@
+from dataclasses import replace
+from pathlib import Path
+
 import pytest
 from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
 from mc_panel_api.config import Settings
+from mc_panel_api.main import create_app
 
 CURRENT_PASSWORD = "Correct horse battery staple 2026"  # noqa: S105
 NEW_PASSWORD = "New correct horse battery staple 2026"  # noqa: S105
@@ -18,6 +22,18 @@ def test_built_frontend_is_served_from_the_configured_path(client: TestClient) -
     response = client.get("/")
     assert response.status_code == 200
     assert '<div id="root"></div>' in response.text
+
+
+def test_missing_frontend_returns_explicit_not_built_status(
+    settings: Settings, tmp_path: Path
+) -> None:
+    app = create_app(replace(settings, web_dist_path=tmp_path / "missing-web-dist"))
+
+    with TestClient(app) as test_client:
+        response = test_client.get("/")
+
+    assert response.status_code == 200
+    assert response.json()["data"] == {"name": "方块管家", "frontend": "not_built"}
 
 
 def test_unknown_api_route_never_falls_back_to_the_spa(client: TestClient) -> None:

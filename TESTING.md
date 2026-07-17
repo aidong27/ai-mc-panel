@@ -53,7 +53,7 @@
 
 ## 0.4.0 Alpha 基线
 
-- 后端：125 个 pytest 测试通过，Ruff 与 strict mypy 通过，覆盖率 79%。
+- 后端：126 个 pytest 测试通过，Ruff 与 strict mypy 通过，覆盖率 79%。
 - 前端：12 个 Vitest 文件、22 个测试通过，TypeScript/Vite 构建通过。
 - 运行依赖：`npm audit --omit=dev` 为 0 个已知漏洞。
 - 部署资源：全部 Shell 脚本通过 `bash -n`，运行 profile 的权限、拒绝覆盖和密钥不回显均有自动测试。

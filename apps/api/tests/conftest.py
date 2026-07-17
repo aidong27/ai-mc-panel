@@ -17,9 +17,13 @@ PASSWORD = "Correct horse battery staple 2026"  # noqa: S105 - isolated test cre
 @pytest.fixture
 def settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Settings:
     fixture_root = Path(__file__).parents[3] / "tests" / "fixtures" / "mock-server"
+    web_dist = tmp_path / "web-dist"
+    web_dist.mkdir()
+    (web_dist / "index.html").write_text('<div id="root"></div>', encoding="utf-8")
     monkeypatch.setenv("MC_PANEL_ENV", "test")
     monkeypatch.setenv("MC_PANEL_SECRET_KEY", "test-secret-key-that-is-not-for-production")
     monkeypatch.setenv("MC_PANEL_DATABASE_PATH", str(tmp_path / "panel.db"))
+    monkeypatch.setenv("MC_PANEL_WEB_DIST_PATH", str(web_dist))
     monkeypatch.setenv("MC_PANEL_MOCK_ROOT", str(fixture_root))
     monkeypatch.setenv("MC_PANEL_ADAPTER", "mock")
     monkeypatch.setenv("MC_PANEL_SERVER_TIMEZONE", "Asia/Shanghai")
