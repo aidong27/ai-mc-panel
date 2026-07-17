@@ -92,12 +92,13 @@ MVP 不提供模组重新启用或自动兼容修复，不允许后端按任意 
 
 - `POST /backups`
 - `GET /backups`
+- `POST /backups/{backup_id}/verify`：低风险完整读取，校验 SHA-256、归档结构和文件身份，不停服。
 - `POST /backups/{backup_id}/restore`
 - `GET /backup-schedule`
 - `GET /backup-status`：自动备份的上次结果、退出码、完成时间和下次执行时间。
 - `PATCH /backup-schedule`
 
-备份 ID 是后端根据固定备份目录产生的不透明编号，不是路径。恢复端点始终要求高风险二次确认。
+备份 ID 是后端根据固定备份目录产生的不透明编号，不是路径。`verification_status` 只返回 `verified`、`checksum_present`、`invalid` 或 `missing`；仅有 `verified` 表示已经完整读取并建立与当前文件身份绑定的凭据。恢复端点始终要求高风险二次确认，并在替换世界前重新校验。
 
 ## 确认状态机
 

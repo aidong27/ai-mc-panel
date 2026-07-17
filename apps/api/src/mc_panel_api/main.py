@@ -123,7 +123,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app = FastAPI(
         title="方块管家 API",
-        version="0.4.0",
+        version="0.4.1",
         docs_url="/api/docs" if not settings.is_production else None,
         redoc_url=None,
         openapi_url="/api/openapi.json" if not settings.is_production else None,
@@ -718,6 +718,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.post("/api/v1/backups")
     def create_backup(request: Request, user: Owner) -> JSONResponse:
         return submit("create_backup", {}, request, user)
+
+    @app.post("/api/v1/backups/{backup_id}/verify")
+    def verify_backup(backup_id: str, request: Request, user: Owner) -> JSONResponse:
+        payload = RestoreBackupParams(backup_id=backup_id)
+        return submit("verify_backup", payload.model_dump(), request, user)
 
     @app.post("/api/v1/backups/{backup_id}/restore")
     def restore_backup(backup_id: str, request: Request, user: Owner) -> JSONResponse:

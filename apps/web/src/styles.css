@@ -259,9 +259,10 @@ input[type="checkbox"] { width: 42px; min-height: 23px; height: 23px; accent-col
 .mod-empty { display: flex; align-items: center; gap: 7px; padding: 16px 0 0; }
 .load-more-row { display: flex; align-items: center; justify-content: center; gap: 14px; border-top: 1px solid var(--line); padding-top: 14px; color: var(--muted); font-size: 13px; }
 
-.backup-list > div { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; min-height: 68px; }
+.backup-list > div { display: grid; grid-template-columns: auto minmax(0, 1fr) auto minmax(0, auto); min-height: 68px; }
 .backup-list > div > span:nth-child(2) { display: grid; gap: 3px; }
 .backup-status { color: var(--primary); }
+.backup-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 7px; }
 .schedule-section { align-self: start; }
 .backup-summary-band { min-height: 84px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border: 1px solid var(--line); border-radius: 6px; background: var(--surface); margin-bottom: 14px; }
 .backup-summary-band > div { display: flex; align-items: center; gap: 10px; border-right: 1px solid var(--line); padding: 13px 16px; }
@@ -404,7 +405,7 @@ input[type="checkbox"] { width: 42px; min-height: 23px; height: 23px; accent-col
   .mods-table .table-row > span[data-label] { display: inline-flex; align-items: center; gap: 5px; }
   .mods-table .table-row > span[data-label]::before { content: attr(data-label); color: var(--muted); font-size: 11px; font-weight: 650; }
   .backup-list > div { grid-template-columns: auto 1fr auto; padding: 8px 0; }
-  .backup-list .button { grid-column: 2 / -1; justify-self: start; }
+  .backup-actions { grid-column: 2 / -1; justify-content: flex-start; }
   .property-row { grid-template-columns: 1fr; gap: 10px; padding: 12px 0; }
   .property-control { grid-template-columns: 1fr auto; }
   .settings-save-row { align-items: stretch; flex-direction: column; }

@@ -48,6 +48,8 @@ class MockMinecraftAdapter:
             self._backup_record(now - timedelta(days=index), 2_200_000_000 + index * 1024)
             for index in range(3)
         ]
+        self._backups[0]["verified"] = False
+        self._backups[0]["verification_status"] = "checksum_present"
         self._backup_schedule = {"hour": 3, "minute": 30, "keep": 7, "kind": "cold"}
         local_now = now.astimezone(ZoneInfo("Asia/Shanghai"))
         next_backup = local_now.replace(hour=3, minute=30, second=0, microsecond=0)
@@ -274,6 +276,21 @@ class MockMinecraftAdapter:
                 self._backups.insert(0, backup)
                 self._backups = self._backups[:7]
                 return {"action": action, "backup": backup, "verified": True}
+            elif action == "verify_backup":
+                selected_backup: dict[str, Any] | None = None
+                for item in self._backups:
+                    if item["id"] == params["backup_id"]:
+                        selected_backup = item
+                        break
+                if selected_backup is None:
+                    raise ValueError("backup not found")
+                selected_backup["verified"] = True
+                selected_backup["verification_status"] = "verified"
+                return {
+                    "action": action,
+                    "backup": selected_backup.copy(),
+                    "verified": True,
+                }
             elif action == "edit_server_property":
                 self._properties[str(params["key"])] = params["value"]
             elif action == "add_whitelist_player":

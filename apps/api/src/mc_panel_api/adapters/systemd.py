@@ -4,6 +4,7 @@ import gzip
 import hashlib
 import hmac
 import json
+import os
 import re
 import shutil
 import stat
@@ -27,6 +28,9 @@ from .base import AdapterOperationError
 
 MAX_PLAYER_LOG_BYTES = 16 * 1024 * 1024
 MAX_ACTIVITY_LOG_BYTES = 32 * 1024 * 1024
+MAX_CHECKSUM_BYTES = 4096
+MAX_VERIFICATION_RECORD_BYTES = 16 * 1024
+VERIFICATION_DIRECTORY = ".mc-panel-verifications"
 MONTHS = {
     "Jan": 1,
     "Feb": 2,
@@ -52,6 +56,18 @@ def _run(argv: list[str], timeout: int = 10) -> subprocess.CompletedProcess[str]
         text=True,
         timeout=timeout,
         env={"PATH": "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"},
+    )
+
+
+def _same_file_identity(left: os.stat_result, right: os.stat_result) -> bool:
+    return (
+        stat.S_ISREG(left.st_mode)
+        and stat.S_ISREG(right.st_mode)
+        and left.st_dev == right.st_dev
+        and left.st_ino == right.st_ino
+        and left.st_size == right.st_size
+        and left.st_mtime_ns == right.st_mtime_ns
+        and left.st_ctime_ns == right.st_ctime_ns
     )
 
 
@@ -628,24 +644,165 @@ class SystemdMinecraftAdapter:
     def list_operators(self) -> list[str]:
         return self._names(self.settings.server_root / "ops.json")
 
+    @staticmethod
+    def _read_checksum(checksum: Path) -> tuple[str, str | None]:
+        flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+        try:
+            descriptor = os.open(checksum, flags)
+        except FileNotFoundError:
+            return "missing", None
+        except OSError:
+            return "invalid", None
+        try:
+            with os.fdopen(descriptor, "rb") as handle:
+                value = os.fstat(handle.fileno())
+                if (
+                    not stat.S_ISREG(value.st_mode)
+                    or value.st_size <= 0
+                    or value.st_size > MAX_CHECKSUM_BYTES
+                ):
+                    return "invalid", None
+                raw = handle.read(MAX_CHECKSUM_BYTES + 1)
+                final = os.fstat(handle.fileno())
+            if len(raw) > MAX_CHECKSUM_BYTES or not _same_file_identity(value, final):
+                return "invalid", None
+            visible = checksum.lstat()
+            if not _same_file_identity(value, visible):
+                return "invalid", None
+            tokens = raw.decode("ascii", errors="strict").split()
+        except (OSError, UnicodeError):
+            return "invalid", None
+        if not tokens or not re.fullmatch(r"[a-f0-9]{64}", tokens[0]):
+            return "invalid", None
+        return "checksum_present", tokens[0]
+
+    def _is_persistently_verified(
+        self,
+        archive: Path,
+        archive_stat: os.stat_result,
+        backup_id: str,
+        checksum_digest: str,
+    ) -> bool:
+        root = self.settings.backup_root / VERIFICATION_DIRECTORY
+        expected_uid = 0 if self.settings.environment == "production" else os.geteuid()
+        directory_flags = (
+            os.O_RDONLY
+            | getattr(os, "O_CLOEXEC", 0)
+            | getattr(os, "O_DIRECTORY", 0)
+            | getattr(os, "O_NOFOLLOW", 0)
+        )
+        try:
+            directory = os.open(root, directory_flags)
+        except OSError:
+            return False
+        try:
+            root_stat = os.fstat(directory)
+            if (
+                not stat.S_ISDIR(root_stat.st_mode)
+                or root_stat.st_uid != expected_uid
+                or stat.S_IMODE(root_stat.st_mode) != 0o755
+            ):
+                return False
+            marker_descriptor = os.open(
+                f"{backup_id}.json",
+                os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0),
+                dir_fd=directory,
+            )
+            with os.fdopen(marker_descriptor, "rb") as marker_handle:
+                marker_stat = os.fstat(marker_handle.fileno())
+                if (
+                    not stat.S_ISREG(marker_stat.st_mode)
+                    or marker_stat.st_uid != expected_uid
+                    or stat.S_IMODE(marker_stat.st_mode) != 0o644
+                    or marker_stat.st_size <= 0
+                    or marker_stat.st_size > MAX_VERIFICATION_RECORD_BYTES
+                ):
+                    return False
+                raw_record = marker_handle.read(MAX_VERIFICATION_RECORD_BYTES + 1)
+                final_marker_stat = os.fstat(marker_handle.fileno())
+            if len(raw_record) > MAX_VERIFICATION_RECORD_BYTES or not _same_file_identity(
+                marker_stat, final_marker_stat
+            ):
+                return False
+            visible_root = root.lstat()
+            if visible_root.st_dev != root_stat.st_dev or visible_root.st_ino != root_stat.st_ino:
+                return False
+            record = json.loads(raw_record.decode("utf-8", errors="strict"))
+        except (OSError, UnicodeError, json.JSONDecodeError):
+            return False
+        finally:
+            os.close(directory)
+        expected_fields = {
+            "version",
+            "backup_id",
+            "filename",
+            "size_bytes",
+            "mtime_ns",
+            "ctime_ns",
+            "device",
+            "inode",
+            "sha256",
+            "verified_at",
+        }
+        if not isinstance(record, dict) or set(record) != expected_fields:
+            return False
+        integer_fields = ("size_bytes", "mtime_ns", "ctime_ns", "device", "inode")
+        if any(
+            not isinstance(record[field], int) or isinstance(record[field], bool)
+            for field in integer_fields
+        ):
+            return False
+        return (
+            isinstance(record["version"], int)
+            and not isinstance(record["version"], bool)
+            and record["version"] == 1
+            and record["backup_id"] == backup_id
+            and record["filename"] == archive.name
+            and record["size_bytes"] == archive_stat.st_size
+            and record["mtime_ns"] == archive_stat.st_mtime_ns
+            and record["ctime_ns"] == archive_stat.st_ctime_ns
+            and record["device"] == archive_stat.st_dev
+            and record["inode"] == archive_stat.st_ino
+            and isinstance(record["sha256"], str)
+            and hmac.compare_digest(record["sha256"], checksum_digest)
+            and isinstance(record["verified_at"], str)
+            and bool(record["verified_at"])
+        )
+
     def list_backups(self) -> list[dict[str, Any]]:
         result = []
         for path in sorted(
             self.settings.backup_root.glob(self.settings.backup_archive_glob), reverse=True
         ):
-            if not path.is_file() or path.is_symlink():
+            try:
+                archive_stat = path.lstat()
+            except OSError:
+                continue
+            if not stat.S_ISREG(archive_stat.st_mode):
                 continue
             digest = hashlib.sha256(path.name.encode()).hexdigest()
+            backup_id = f"backup_{digest[:12]}"
             checksum = path.with_suffix(path.suffix + ".sha256")
-            checksum_present = checksum.is_file() and not checksum.is_symlink()
+            verification_status, checksum_digest = self._read_checksum(checksum)
+            verified = bool(
+                checksum_digest
+                and self._is_persistently_verified(path, archive_stat, backup_id, checksum_digest)
+            )
+            if verified:
+                try:
+                    verified = _same_file_identity(archive_stat, path.lstat())
+                except OSError:
+                    verified = False
+            if verified:
+                verification_status = "verified"
             result.append(
                 {
-                    "id": f"backup_{digest[:12]}",
+                    "id": backup_id,
                     "filename": path.name,
-                    "created_at": path.stat().st_mtime,
-                    "size_bytes": path.stat().st_size,
-                    "verified": False,
-                    "verification_status": "checksum_present" if checksum_present else "missing",
+                    "created_at": archive_stat.st_mtime,
+                    "size_bytes": archive_stat.st_size,
+                    "verified": verified,
+                    "verification_status": verification_status,
                     "kind": "cold",
                 }
             )
@@ -808,6 +965,7 @@ class SystemdMinecraftAdapter:
             "start_server": 300,
             "restart_server": 300,
             "create_backup": 1200,
+            "verify_backup": 1200,
             "restore_backup": 2400,
         }.get(action, 600)
         # The helper path comes from root-owned service configuration; JSON stays on stdin.
