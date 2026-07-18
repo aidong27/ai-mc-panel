@@ -42,6 +42,7 @@ const dashboard: DashboardData = {
     requests_per_day: 40,
     tokens_per_day: 30_000,
   },
+  capabilities: { console_commands_enabled: false },
   diagnostics: {
     level: "good",
     headline: "当前没有需要立即处理的事项",

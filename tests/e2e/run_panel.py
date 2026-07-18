@@ -34,6 +34,7 @@ os.environ.update(
         "MC_PANEL_SERVER_TIMEZONE": "Asia/Shanghai",
         "MC_PANEL_SERVER_NAME": "星光好友服",
         "MC_PANEL_PUBLIC_ADDRESS": "play.example.test:25565",
+        "MC_PANEL_CONSOLE_COMMANDS_ENABLED": "true",
         "MC_PANEL_AI_ENABLED": "false",
     }
 )

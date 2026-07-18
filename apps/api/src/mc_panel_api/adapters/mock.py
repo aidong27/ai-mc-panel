@@ -234,6 +234,16 @@ class MockMinecraftAdapter:
     def list_mods(self) -> list[dict[str, Any]]:
         return [item.copy() for item in self._mods]
 
+    def get_mod_upload(self, upload_id: str) -> dict[str, Any]:
+        if not upload_id.startswith("upload_"):
+            raise KeyError("mod upload not found")
+        return {
+            "id": upload_id,
+            "filename": "uploaded-test-mod.jar",
+            "size_bytes": 8 * 1024 * 1024,
+            "metadata": "META-INF/mods.toml",
+        }
+
     def get_properties(self) -> dict[str, Any]:
         return self._properties.copy()
 

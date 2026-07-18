@@ -29,6 +29,7 @@
 | `MC_PANEL_BACKUP_TIMER` | `minecraft-backup.timer` | 备份 timer |
 | `MC_PANEL_CONSOLE_USER` | `minecraft` | screen 所属 Unix 用户 |
 | `MC_PANEL_CONSOLE_SCREEN` | `minecraft` | screen 会话名 |
+| `MC_PANEL_CONSOLE_COMMANDS_ENABLED` | `false` | 是否开放仅手动的通用 Minecraft 控制台；生产默认关闭且不暴露给 AI |
 
 路径、unit、账号、端口和 glob 都会严格校验。浏览器和 AI 不能修改这些值。
 
@@ -55,8 +56,8 @@ sudo env \
 在受信任开发机执行：
 
 ```bash
-./deploy/scripts/build-release.sh 0.4.1
-shasum -a 256 -c release/mc-panel-0.4.1.tar.gz.sha256
+./deploy/scripts/build-release.sh 0.4.2
+shasum -a 256 -c release/mc-panel-0.4.2.tar.gz.sha256
 ```
 
 构建会执行后端格式、lint、strict mypy、pytest、前端测试和生产构建，然后生成 Linux x86_64 离线 wheelhouse、文件 SHA256 清单和归档。`.env`、数据库、日志、证书、密钥、本地生产记录和历史发布包会被排除。
@@ -81,7 +82,8 @@ sudo env \
   MC_PANEL_BACKUP_TIMER=minecraft-backup.timer \
   MC_PANEL_CONSOLE_USER=minecraft \
   MC_PANEL_CONSOLE_SCREEN=minecraft \
-  ./deploy/scripts/install-readonly.sh /tmp/mc-panel-release/0.4.1 0.4.1
+  MC_PANEL_CONSOLE_COMMANDS_ENABLED=false \
+  ./deploy/scripts/install-readonly.sh /tmp/mc-panel-release/0.4.2 0.4.2
 ```
 
 安装会创建：
@@ -119,6 +121,8 @@ sudo env MC_PANEL_APPROVE_WRITES=YES \
 
 脚本会从 root 所有的 `helper.json` 生成精确 `ReadWritePaths` drop-in，安装只允许无参数 helper 的 sudoers，并重启面板。Minecraft 不会因此重启。
 
+通用控制台不是启用受控写入的必需能力。确有需要时，由 root 在 `/etc/mc-panel/panel.env` 中显式设置 `MC_PANEL_CONSOLE_COMMANDS_ENABLED=true`，检查文件仍为 `root:mc-panel`、0640 后只重启 `mc-panel.service`。该开关不会把控制台工具暴露给 AI。
+
 紧急关闭写入：
 
 ```bash
@@ -140,10 +144,10 @@ MC_PANEL_PUBLIC_ORIGIN=https://panel.example.com
 
 ```bash
 sudo env MC_PANEL_APPROVE_UPDATE=YES \
-  /opt/mc-panel/current/deploy/scripts/update.sh /tmp/mc-panel-release/0.4.1 0.4.1
+  /opt/mc-panel/current/deploy/scripts/update.sh /tmp/mc-panel-release/0.4.2 0.4.2
 
 sudo env MC_PANEL_APPROVE_ROLLBACK=YES \
-  /opt/mc-panel/current/deploy/scripts/rollback.sh 0.4.1
+  /opt/mc-panel/current/deploy/scripts/rollback.sh 0.4.2
 ```
 
 更新前使用 SQLite backup API 创建一致副本和 SHA256，保存旧 helper、systemd unit、运行路径 drop-in 与 release。健康检查失败会自动恢复旧 release 和数据库。更新只重启面板。

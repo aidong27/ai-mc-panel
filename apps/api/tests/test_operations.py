@@ -1,3 +1,5 @@
+import hashlib
+import json
 from concurrent.futures import ThreadPoolExecutor
 from threading import Barrier, Lock
 
@@ -6,6 +8,14 @@ from fastapi.testclient import TestClient
 
 from mc_panel_api.adapters.base import AdapterOperationError
 from mc_panel_api.operations import OperationError
+
+
+def _review_items(payload: dict[str, object]) -> dict[str, str]:
+    review = payload["review"]
+    assert isinstance(review, dict)
+    items = review["review_items"]
+    assert isinstance(items, list)
+    return {str(item["label"]): str(item["value"]) for item in items if isinstance(item, dict)}
 
 
 def test_low_risk_backup_executes_and_is_audited(
@@ -52,6 +62,8 @@ def test_restart_needs_confirmation_and_only_runs_after_confirm(
     data = requested.json()["data"]
     assert data["status"] == "confirmation_required"
     confirmation_id = data["confirmation_id"]
+    assert data["review"]["operation_id"] == confirmation_id
+    assert _review_items(data)["目标服务"] == "minecraft.service"
 
     audit_before = client.get("/api/v1/audit-events").json()["data"]
     assert audit_before[0]["outcome"] == "confirmation_required"
@@ -71,9 +83,17 @@ def test_restore_requires_two_distinct_confirmations(
     logged_in: tuple[TestClient, dict[str, str]],
 ) -> None:
     client, headers = logged_in
-    backup_id = client.get("/api/v1/backups").json()["data"][0]["id"]
+    backup = client.get("/api/v1/backups").json()["data"][0]
+    backup_id = backup["id"]
     requested = client.post(f"/api/v1/backups/{backup_id}/restore", headers=headers)
-    confirmation_id = requested.json()["data"]["confirmation_id"]
+    requested_data = requested.json()["data"]
+    confirmation_id = requested_data["confirmation_id"]
+    items = _review_items(requested_data)
+    assert items["备份 ID"] == backup_id
+    assert items["备份时间"] == backup["created_at"]
+    assert items["备份大小"] == f"{backup['size_bytes'] / (1024**3):.2f} GB"
+    assert items["完整性"] == "校验文件就绪"
+    assert requested_data["review"]["params_hash"]
 
     first = client.post(
         f"/api/v1/confirmations/{confirmation_id}/confirm", headers=headers, json={}
@@ -117,11 +137,14 @@ def test_unicode_console_command_uses_the_confirmation_flow(
         headers=headers,
         json={
             "action": "send_console_command",
-            "params": {"command": "say [验收] 面板控制台测试"},
+            "params": {"command": "say [验收]  面板控制台测试"},
         },
     )
     assert requested.status_code == 202
-    confirmation_id = requested.json()["data"]["confirmation_id"]
+    requested_data = requested.json()["data"]
+    confirmation_id = requested_data["confirmation_id"]
+    assert _review_items(requested_data)["命令"] == "say [验收]  面板控制台测试"
+    assert "不证明游戏内效果" in requested_data["review"]["assurance_expected"]
 
     confirmed = client.post(
         f"/api/v1/confirmations/{confirmation_id}/confirm",
@@ -323,6 +346,94 @@ def test_confirmation_rejects_changed_bound_parameters(
 
     response = client.post(
         f"/api/v1/confirmations/{confirmation_id}/confirm", headers=headers, json={}
+    )
+
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "confirmation_invalid"
+
+
+def test_operation_review_binds_normalized_params_and_frozen_review(
+    logged_in: tuple[TestClient, dict[str, str]],
+) -> None:
+    client, headers = logged_in
+    requested = client.post(
+        "/api/v1/operations",
+        headers=headers,
+        json={
+            "action": "edit_server_property",
+            "params": {"key": "view-distance", "value": 6},
+        },
+    )
+    data = requested.json()["data"]
+    confirmation_id = data["confirmation_id"]
+    items = _review_items(data)
+
+    assert requested.status_code == 202
+    assert items == {"设置": "view-distance", "当前值": "8", "新值": "6"}
+    row = client.app.state.database.fetch_one(
+        "SELECT params_json, params_hash FROM confirmations WHERE id = ?",
+        (confirmation_id,),
+    )
+    assert row is not None
+    frozen = json.loads(str(row["params_json"]))
+    assert frozen["params"] == {"key": "view-distance", "value": 6}
+    assert frozen["review"] == data["review"]
+    canonical = json.dumps(
+        frozen,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    )
+    assert row["params_hash"] == hashlib.sha256(canonical.encode()).hexdigest()
+
+
+def test_review_identifies_players_and_mod_files(
+    logged_in: tuple[TestClient, dict[str, str]],
+) -> None:
+    client, headers = logged_in
+    player = client.post(
+        "/api/v1/operations",
+        headers=headers,
+        json={"action": "add_operator", "params": {"player": "Alex"}},
+    ).json()["data"]
+    mod = client.get("/api/v1/mods").json()["data"][0]
+    disabled = client.post(
+        "/api/v1/operations",
+        headers=headers,
+        json={"action": "disable_mod", "params": {"mod_id": mod["id"]}},
+    ).json()["data"]
+
+    assert _review_items(player)["玩家"] == "Alex"
+    mod_items = _review_items(disabled)
+    assert mod_items["模组 ID"] == mod["id"]
+    assert mod["filename"] in mod_items["模组"]
+
+
+def test_confirmation_rejects_a_tampered_frozen_review(
+    logged_in: tuple[TestClient, dict[str, str]],
+) -> None:
+    client, headers = logged_in
+    requested = client.post(
+        "/api/v1/operators/Alex",
+        headers=headers,
+    ).json()["data"]
+    confirmation_id = requested["confirmation_id"]
+    row = client.app.state.database.fetch_one(
+        "SELECT params_json FROM confirmations WHERE id = ?",
+        (confirmation_id,),
+    )
+    assert row is not None
+    frozen = json.loads(str(row["params_json"]))
+    frozen["review"]["review_items"][0]["value"] = "NotAlex"
+    client.app.state.database.execute(
+        "UPDATE confirmations SET params_json = ? WHERE id = ?",
+        (json.dumps(frozen, ensure_ascii=False), confirmation_id),
+    )
+
+    response = client.post(
+        f"/api/v1/confirmations/{confirmation_id}/confirm",
+        headers=headers,
+        json={},
     )
 
     assert response.status_code == 409

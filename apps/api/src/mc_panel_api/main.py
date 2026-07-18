@@ -57,7 +57,7 @@ from .models import (
 )
 from .operations import OperationError, OperationService
 from .redaction import redact
-from .tools import ToolRegistry
+from .tools import ToolRegistry, ToolUnavailableError
 
 COOKIE_NAME = "mc_panel_session"
 MAX_UPLOAD_BYTES = 128 * 1024 * 1024
@@ -99,7 +99,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     else:
         adapter = MockMinecraftAdapter(settings.mock_root)
     activity = PlayerActivityService(database, adapter)
-    registry = ToolRegistry(adapter)
+    registry = ToolRegistry(
+        adapter,
+        manual_console_enabled=settings.console_commands_enabled,
+    )
     operations = OperationService(database, registry, adapter, settings.server_display_name)
     agent = AgentService(settings, database, adapter, registry, activity)
 
@@ -123,7 +126,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app = FastAPI(
         title="方块管家 API",
-        version="0.4.1",
+        version="0.4.2",
         docs_url="/api/docs" if not settings.is_production else None,
         redoc_url=None,
         openapi_url="/api/openapi.json" if not settings.is_production else None,
@@ -177,6 +180,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def operation_error_handler(request: Request, exc: OperationError) -> JSONResponse:
         status = 409 if exc.code not in {"confirmation_not_found"} else 404
         return _error_response(request, exc.code, exc.message, status, exc.details)
+
+    @app.exception_handler(ToolUnavailableError)
+    async def tool_unavailable_handler(request: Request, exc: ToolUnavailableError) -> JSONResponse:
+        return _error_response(
+            request,
+            "tool_disabled",
+            str(exc),
+            403,
+        )
 
     @app.exception_handler(AgentError)
     async def agent_error_handler(request: Request, exc: AgentError) -> JSONResponse:
@@ -272,6 +284,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "metrics": metrics,
             "players": players,
             "ai": agent.status(),
+            "capabilities": {
+                "console_commands_enabled": settings.console_commands_enabled,
+            },
             "diagnostics": build_diagnostics(
                 status=status,
                 metrics=metrics,
@@ -615,6 +630,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def preview(payload: OperationRequest, request: Request, _: User) -> JSONResponse:
         try:
             data = registry.preview(payload.action, payload.params)
+        except ToolUnavailableError:
+            raise
         except ValueError as exc:
             raise HTTPException(
                 422,
@@ -635,6 +652,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 user_id=user.id,
                 request_id=_request_id(request),
             )
+        except ToolUnavailableError:
+            raise
         except ValueError as exc:
             raise HTTPException(
                 422,

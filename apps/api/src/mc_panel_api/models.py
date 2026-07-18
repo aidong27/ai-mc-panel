@@ -30,6 +30,28 @@ class OperationState(StrEnum):
     CANCELLED = "cancelled"
 
 
+class ReviewItem(StrictModel):
+    label: str = Field(min_length=1, max_length=40)
+    value: str = Field(min_length=1, max_length=500)
+
+
+class OperationReview(StrictModel):
+    operation_id: str = Field(
+        min_length=10,
+        max_length=80,
+        pattern=r"^(?:confirm|review)_[a-f0-9]+$",
+    )
+    human_title: str = Field(min_length=1, max_length=120)
+    risk: RiskLevel
+    review_items: list[ReviewItem] = Field(min_length=1, max_length=12)
+    impact: str = Field(min_length=1, max_length=500)
+    stops_server: bool
+    recovery_plan: str = Field(min_length=1, max_length=500)
+    assurance_expected: str = Field(min_length=1, max_length=500)
+    params_hash: str = Field(pattern=r"^[a-f0-9]{64}$")
+    expires_at: str | None = Field(default=None, max_length=80)
+
+
 class LoginRequest(StrictModel):
     username: str = Field(min_length=3, max_length=64)
     password: str = Field(min_length=10, max_length=256)

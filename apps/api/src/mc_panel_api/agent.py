@@ -16,7 +16,7 @@ from .adapters.base import MinecraftAdapter
 from .config import Settings
 from .database import Database
 from .redaction import redact, redact_text
-from .tools import SPECS, ToolRegistry
+from .tools import SPECS, ToolExposure, ToolRegistry
 
 
 class AgentError(RuntimeError):
@@ -26,19 +26,22 @@ class AgentError(RuntimeError):
         self.message = message
 
 
-READ_TOOLS = {
-    "check_disk_space",
-    "check_mod_compatibility",
-    "get_server_properties",
-    "get_server_status",
-    "get_player_activity",
-    "get_system_metrics",
-    "list_players",
-    "list_mods",
-    "read_recent_logs",
-    "read_crash_report",
-    "read_recent_operations",
-    "list_backups",
+READ_TOOLS: dict[str, ToolExposure] = {
+    name: ToolExposure.READ_ONLY
+    for name in {
+        "check_disk_space",
+        "check_mod_compatibility",
+        "get_server_properties",
+        "get_server_status",
+        "get_player_activity",
+        "get_system_metrics",
+        "list_players",
+        "list_mods",
+        "read_recent_logs",
+        "read_crash_report",
+        "read_recent_operations",
+        "list_backups",
+    }
 }
 
 MAX_AGENT_LOG_CHARS = 48_000
@@ -206,7 +209,7 @@ class AgentService:
                             "content": json.dumps(redact(result), ensure_ascii=False),
                         }
                     )
-                elif name in SPECS:
+                elif name in SPECS and SPECS[name].exposure is ToolExposure.AI_PROPOSABLE:
                     proposal = self.registry.preview(name, arguments)
                     proposals.append(proposal)
                     messages.append(
@@ -555,6 +558,8 @@ class AgentService:
             ),
         ]
         for spec in SPECS.values():
+            if spec.exposure is not ToolExposure.AI_PROPOSABLE:
+                continue
             schemas.append(
                 self._schema(spec.name, spec.reason, spec.params_model.model_json_schema())
             )

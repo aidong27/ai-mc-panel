@@ -103,6 +103,9 @@ export interface DashboardData {
   metrics: Metrics;
   players: Players;
   ai: AiStatus;
+  capabilities: {
+    console_commands_enabled: boolean;
+  };
   diagnostics: Diagnostics;
   quick_actions: string[];
 }
@@ -157,8 +160,27 @@ export interface OperationPreview {
   stops_server: boolean;
   creates_recovery_point: boolean;
   rollback: string;
+  review: OperationReview;
   status?: string;
   confirmation_id?: string;
+}
+
+export interface ReviewItem {
+  label: string;
+  value: string;
+}
+
+export interface OperationReview {
+  operation_id: string;
+  human_title: string;
+  risk: "low" | "medium" | "high";
+  review_items: ReviewItem[];
+  impact: string;
+  stops_server: boolean;
+  recovery_plan: string;
+  assurance_expected: string;
+  params_hash: string;
+  expires_at: string | null;
 }
 
 export interface OperationResult {

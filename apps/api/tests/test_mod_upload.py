@@ -1,10 +1,17 @@
 from __future__ import annotations
 
 import io
+import json
 import zipfile
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
+
+from mc_panel_api.adapters.systemd import SystemdMinecraftAdapter
+from mc_panel_api.config import Settings
+
+UPLOAD_ID = "upload_0123456789abcdef"
 
 
 def _jar() -> bytes:
@@ -13,6 +20,64 @@ def _jar() -> bytes:
         archive.writestr("META-INF/mods.toml", 'modLoader="javafml"\nloaderVersion="[47,)"')
         archive.writestr("example.txt", "fixture")
     return stream.getvalue()
+
+
+def _stored_upload(settings: Settings) -> tuple[Path, Path, dict[str, object]]:
+    quarantine = settings.database_path.parent / "quarantine"
+    quarantine.mkdir(mode=0o700)
+    quarantine.chmod(0o700)
+    content = _jar()
+    jar = quarantine / f"{UPLOAD_ID}.jar"
+    jar.write_bytes(content)
+    jar.chmod(0o600)
+    metadata: dict[str, object] = {
+        "filename": "safe-example.jar",
+        "sha256": "a" * 64,
+        "size_bytes": len(content),
+        "metadata": "META-INF/mods.toml",
+    }
+    sidecar = quarantine / f"{UPLOAD_ID}.json"
+    sidecar.write_text(json.dumps(metadata), encoding="utf-8")
+    sidecar.chmod(0o600)
+    return jar, sidecar, metadata
+
+
+def test_systemd_adapter_reads_exact_quarantined_mod_metadata(settings: Settings) -> None:
+    _, _, metadata = _stored_upload(settings)
+
+    result = SystemdMinecraftAdapter(settings).get_mod_upload(UPLOAD_ID)
+
+    assert result == {
+        "id": UPLOAD_ID,
+        "filename": metadata["filename"],
+        "size_bytes": metadata["size_bytes"],
+        "metadata": metadata["metadata"],
+    }
+
+
+def test_systemd_adapter_rejects_symlinked_upload_metadata(settings: Settings) -> None:
+    _, sidecar, metadata = _stored_upload(settings)
+    external = settings.database_path.parent / "external-upload.json"
+    external.write_text(json.dumps(metadata), encoding="utf-8")
+    sidecar.unlink()
+    sidecar.symlink_to(external)
+
+    with pytest.raises(KeyError, match="mod upload not found"):
+        SystemdMinecraftAdapter(settings).get_mod_upload(UPLOAD_ID)
+
+
+def test_systemd_adapter_rejects_duplicate_upload_metadata_keys(settings: Settings) -> None:
+    _, sidecar, metadata = _stored_upload(settings)
+    sidecar.write_text(
+        "{" + f'"filename":"first.jar","filename":"second.jar",'
+        f'"sha256":"{metadata["sha256"]}",'
+        f'"size_bytes":{metadata["size_bytes"]},'
+        '"metadata":"META-INF/mods.toml"}',
+        encoding="utf-8",
+    )
+
+    with pytest.raises(KeyError, match="mod upload not found"):
+        SystemdMinecraftAdapter(settings).get_mod_upload(UPLOAD_ID)
 
 
 def test_mod_upload_goes_to_quarantine(

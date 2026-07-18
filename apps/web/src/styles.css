@@ -229,6 +229,8 @@ input[type="checkbox"] { width: 42px; min-height: 23px; height: 23px; accent-col
 .segmented-control button.active { color: #fff; background: var(--info); }
 .console-output { height: 430px; overflow: auto; border: 1px solid #323933; border-radius: 5px; background: #111512; color: #d8e2da; padding: 14px; font-size: 12px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
 .console-command { margin: 10px 0 5px; }
+.console-disabled { display: flex; align-items: center; gap: 8px; margin-top: 12px; }
+.console-disabled svg { flex: 0 0 17px; }
 .report-list > div > span { flex: 1; display: grid; gap: 2px; }
 .report-list small, .backup-list small { color: var(--muted); }
 .crash-modal { width: min(900px, 100%); }
@@ -319,6 +321,14 @@ input[type="checkbox"] { width: 42px; min-height: 23px; height: 23px; accent-col
 .impact-list { display: grid; gap: 11px; margin: 20px 0; }
 .impact-list > div { display: flex; align-items: flex-start; gap: 9px; color: var(--muted); line-height: 1.55; }
 .impact-list svg { flex: 0 0 18px; margin-top: 3px; }
+.operation-review { border-block: 1px solid var(--line); padding: 16px 0; }
+.operation-review h3 { display: flex; align-items: center; gap: 8px; margin: 0 0 12px; font-size: 15px; }
+.operation-review dl { display: grid; gap: 9px; margin: 0; }
+.operation-review dl > div { display: grid; grid-template-columns: minmax(92px, 120px) minmax(0, 1fr); gap: 12px; align-items: start; }
+.operation-review dt { color: var(--muted); font-size: 13px; }
+.operation-review dd { margin: 0; overflow-wrap: anywhere; line-height: 1.5; white-space: pre-wrap; }
+.operation-review p { display: flex; align-items: flex-start; gap: 8px; margin: 14px 0 0; color: var(--muted); font-size: 13px; line-height: 1.5; }
+.operation-review p svg { flex: 0 0 17px; margin-top: 2px; color: var(--success); }
 .danger-confirmation { border: 1px solid var(--danger); border-radius: 5px; background: var(--danger-soft); padding: 12px; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 9px; margin-top: 20px; }
 .copy-address { display: grid; grid-template-columns: 1fr auto; gap: 8px; margin: 20px 0; }
@@ -424,6 +434,7 @@ input[type="checkbox"] { width: 42px; min-height: 23px; height: 23px; accent-col
   .audit-list code { display: none; }
   .console-output { height: 340px; }
   .modal { padding: 16px; }
+  .operation-review dl > div { grid-template-columns: 1fr; gap: 2px; }
   .modal-actions { display: grid; grid-template-columns: 1fr 1fr; }
   .copy-address { grid-template-columns: 1fr; }
   .copy-address code { min-height: 46px; }

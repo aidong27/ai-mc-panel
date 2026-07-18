@@ -1,5 +1,13 @@
 import { useEffect, useRef, useState } from "react";
-import { AlertTriangle, DatabaseBackup, ServerOff, ShieldAlert, X } from "lucide-react";
+import {
+  AlertTriangle,
+  DatabaseBackup,
+  ListChecks,
+  ServerOff,
+  ShieldAlert,
+  ShieldCheck,
+  X,
+} from "lucide-react";
 import type { OperationPreview } from "../types";
 
 interface ConfirmDialogProps {
@@ -78,6 +86,19 @@ export function ConfirmDialog({
           <div><ServerOff size={18} /><span><strong>影响：</strong>{operation.impact}</span></div>
           <div><DatabaseBackup size={18} /><span><strong>恢复：</strong>{operation.rollback}</span></div>
         </div>
+
+        <section className="operation-review" aria-label="本次操作的具体内容">
+          <h3><ListChecks size={18} />请确认具体目标</h3>
+          <dl>
+            {operation.review.review_items.map((item) => (
+              <div key={`${item.label}-${item.value}`}>
+                <dt>{item.label}</dt>
+                <dd>{item.value}</dd>
+              </div>
+            ))}
+          </dl>
+          <p><ShieldCheck size={17} /><span><strong>系统将如何确认：</strong>{operation.review.assurance_expected}</span></p>
+        </section>
 
         {secondStep && (
           <label className="danger-confirmation">

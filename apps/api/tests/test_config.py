@@ -114,3 +114,14 @@ def test_runtime_profile_rejects_unsafe_values(
 
     with pytest.raises(ValueError, match=message):
         Settings.from_env()
+
+
+def test_production_console_commands_are_disabled_unless_root_enables_them(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _production_env(monkeypatch, tmp_path)
+
+    assert Settings.from_env().console_commands_enabled is False
+
+    monkeypatch.setenv("MC_PANEL_CONSOLE_COMMANDS_ENABLED", "true")
+    assert Settings.from_env().console_commands_enabled is True

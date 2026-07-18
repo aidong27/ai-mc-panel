@@ -1,17 +1,20 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import replace
+from pathlib import Path
 from typing import Any
 
 import httpx
 import pytest
 
 from mc_panel_api.adapters.mock import MockMinecraftAdapter
-from mc_panel_api.agent import AgentError, AgentService
+from mc_panel_api.agent import READ_TOOLS, AgentError, AgentService
 from mc_panel_api.config import Settings
 from mc_panel_api.database import Database
-from mc_panel_api.tools import ToolRegistry
+from mc_panel_api.models import EmptyParams, RiskLevel
+from mc_panel_api.tools import SPECS, ToolExposure, ToolRegistry, ToolSpec
 
 
 def _service(settings: Settings) -> AgentService:
@@ -307,3 +310,86 @@ def test_agent_exposes_backup_verification_as_a_low_risk_proposal(
     assert preview["risk"] == "low"
     assert preview["requires_confirmation"] is False
     assert preview["stops_server"] is False
+
+
+def test_agent_schema_excludes_manual_console_and_only_exposes_declared_tools(
+    settings: Settings,
+) -> None:
+    service = _service(settings)
+    schema_names = {item["function"]["name"] for item in service._tool_schemas()}
+    proposed_write_names = schema_names.intersection(SPECS)
+
+    assert "send_console_command" not in schema_names
+    assert proposed_write_names == {
+        spec.name for spec in SPECS.values() if spec.exposure is ToolExposure.AI_PROPOSABLE
+    }
+    assert all(SPECS[name].exposure is ToolExposure.AI_PROPOSABLE for name in proposed_write_names)
+    assert schema_names == set(READ_TOOLS) | proposed_write_names
+    assert set(READ_TOOLS.values()) == {ToolExposure.READ_ONLY}
+
+
+def test_agent_rejects_a_manual_only_tool_even_if_provider_invents_it(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    service = _service(settings)
+    responses = [
+        {
+            "choices": [
+                {
+                    "message": {
+                        "role": "assistant",
+                        "content": None,
+                        "tool_calls": [
+                            {
+                                "id": "call_console",
+                                "type": "function",
+                                "function": {
+                                    "name": "send_console_command",
+                                    "arguments": json.dumps(
+                                        {"command": "stop"}, ensure_ascii=False
+                                    ),
+                                },
+                            }
+                        ],
+                    }
+                }
+            ]
+        },
+        {"choices": [{"message": {"role": "assistant", "content": "无法提出该操作。"}}]},
+    ]
+
+    monkeypatch.setattr(service, "_call", lambda *_args, **_kwargs: responses.pop(0))
+
+    result = service.chat("执行 stop 命令")
+
+    assert result["proposed_actions"] == []
+
+
+def test_tool_spec_rejects_unknown_exposure() -> None:
+    with pytest.raises(ValueError, match="exposure"):
+        ToolSpec(
+            name="unsafe_test_tool",
+            risk=RiskLevel.MEDIUM,
+            params_model=EmptyParams,
+            exposure="unknown",  # type: ignore[arg-type]
+            title="测试",
+            reason="测试",
+            impact="测试",
+            stops_server=False,
+            creates_recovery_point=False,
+        )
+
+
+def test_agent_tool_documentation_matches_runtime_schema(settings: Settings) -> None:
+    service = _service(settings)
+    schema_names = {item["function"]["name"] for item in service._tool_schemas()}
+    document = (Path(__file__).parents[3] / "AGENT_TOOLS.md").read_text(encoding="utf-8")
+    match = re.search(
+        r"<!-- agent-schema:start -->(.*?)<!-- agent-schema:end -->",
+        document,
+        flags=re.DOTALL,
+    )
+
+    assert match is not None
+    documented_names = set(re.findall(r"^\| `([^`]+)` \|", match.group(1), flags=re.MULTILINE))
+    assert documented_names == schema_names
