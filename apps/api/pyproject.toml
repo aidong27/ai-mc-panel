@@ -17,7 +17,7 @@ dev = [
   "mypy>=1.16,<2",
   "pytest>=9.0.3,<10",
   "pytest-asyncio>=1,<2",
-  "pytest-cov>=6.2,<7",
+  "pytest-cov>=6.2,<8",
   "ruff>=0.12,<1",
   "types-psutil>=7.0.0.20250601,<8",
 ]
