@@ -57,7 +57,9 @@ sudo env \
 
 ```bash
 ./deploy/scripts/build-release.sh 0.4.2
-shasum -a 256 -c release/mc-panel-0.4.2.tar.gz.sha256
+cd release
+shasum -a 256 -c mc-panel-0.4.2.tar.gz.sha256
+cd ..
 ```
 
 构建会执行后端格式、lint、strict mypy、pytest、前端测试和生产构建，然后生成 Linux x86_64 离线 wheelhouse、文件 SHA256 清单和归档。`.env`、数据库、日志、证书、密钥、本地生产记录和历史发布包会被排除。
