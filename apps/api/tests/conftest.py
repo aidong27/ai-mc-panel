@@ -28,6 +28,7 @@ def settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Settings:
     monkeypatch.setenv("MC_PANEL_ADAPTER", "mock")
     monkeypatch.setenv("MC_PANEL_SERVER_TIMEZONE", "Asia/Shanghai")
     monkeypatch.setenv("MC_PANEL_SERVER_NAME", "星光好友服")
+    monkeypatch.setenv("MC_PANEL_CONSOLE_COMMANDS_ENABLED", "true")
     monkeypatch.setenv("MC_PANEL_AI_ENABLED", "false")
     monkeypatch.setenv("MC_PANEL_PUBLIC_ORIGIN", "https://panel.example.test")
     return Settings.from_env()

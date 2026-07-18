@@ -184,6 +184,7 @@ class Settings:
     recovery_root: Path
     console_user: str
     console_screen_name: str
+    console_commands_enabled: bool
     helper_config_path: Path
     minecraft_version_hint: str
     loader_hint: str
@@ -321,6 +322,7 @@ class Settings:
             console_screen_name=_safe_name(
                 "MC_PANEL_CONSOLE_SCREEN", "minecraft", r"[A-Za-z0-9_.:-]{1,64}"
             ),
+            console_commands_enabled=_bool("MC_PANEL_CONSOLE_COMMANDS_ENABLED", False),
             helper_config_path=_runtime_path(
                 "MC_PANEL_HELPER_CONFIG_PATH",
                 "/etc/mc-panel/helper.json",

@@ -119,6 +119,7 @@ def test_runtime_profile_renderer_is_private_and_refuses_overwrite(tmp_path: Pat
     helper = json.loads(helper_config.read_text(encoding="utf-8"))
     assert helper["server_root"] == "/srv/minecraft/example"
     assert helper["server_service"] == "minecraft.service"
+    assert 'MC_PANEL_CONSOLE_COMMANDS_ENABLED="false"' in panel_content
 
     before = panel_env.read_bytes()
     refused = subprocess.run(  # noqa: S603 - fixed interpreter and local test script

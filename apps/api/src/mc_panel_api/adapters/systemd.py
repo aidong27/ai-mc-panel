@@ -30,6 +30,7 @@ MAX_PLAYER_LOG_BYTES = 16 * 1024 * 1024
 MAX_ACTIVITY_LOG_BYTES = 32 * 1024 * 1024
 MAX_CHECKSUM_BYTES = 4096
 MAX_VERIFICATION_RECORD_BYTES = 16 * 1024
+MAX_UPLOAD_METADATA_BYTES = 64 * 1024
 VERIFICATION_DIRECTORY = ".mc-panel-verifications"
 MONTHS = {
     "Jan": 1,
@@ -521,6 +522,95 @@ class SystemdMinecraftAdapter:
             identity = str(item.pop("_identity"))
             item["duplicate"] = counts[identity] > 1
         return result
+
+    def get_mod_upload(self, upload_id: str) -> dict[str, Any]:
+        if not re.fullmatch(r"upload_[a-f0-9]{16}", upload_id):
+            raise KeyError("mod upload not found")
+        root = self.settings.database_path.parent / "quarantine"
+        try:
+            root_stat = root.lstat()
+        except OSError as exc:
+            raise KeyError("mod upload not found") from exc
+        if (
+            not stat.S_ISDIR(root_stat.st_mode)
+            or root_stat.st_uid != os.geteuid()
+            or stat.S_IMODE(root_stat.st_mode) & 0o077
+        ):
+            raise KeyError("mod upload not found")
+
+        sidecar = root / f"{upload_id}.json"
+        jar = root / f"{upload_id}.jar"
+        flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+        try:
+            descriptor = os.open(sidecar, flags)
+        except OSError as exc:
+            raise KeyError("mod upload not found") from exc
+        try:
+            with os.fdopen(descriptor, "r", encoding="utf-8") as handle:
+                sidecar_stat = os.fstat(handle.fileno())
+                if (
+                    not stat.S_ISREG(sidecar_stat.st_mode)
+                    or sidecar_stat.st_uid != os.geteuid()
+                    or stat.S_IMODE(sidecar_stat.st_mode) & 0o022
+                    or sidecar_stat.st_size > MAX_UPLOAD_METADATA_BYTES
+                ):
+                    raise KeyError("mod upload not found")
+                pairs = json.load(handle, object_pairs_hook=lambda values: values)
+        except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+            raise KeyError("mod upload not found") from exc
+        if not isinstance(pairs, list) or not all(
+            isinstance(item, tuple) and len(item) == 2 for item in pairs
+        ):
+            raise KeyError("mod upload not found")
+        keys = [str(item[0]) for item in pairs]
+        if len(keys) != len(set(keys)):
+            raise KeyError("mod upload not found")
+        payload = dict(pairs)
+        if set(payload) != {"filename", "sha256", "size_bytes", "metadata"}:
+            raise KeyError("mod upload not found")
+
+        filename = payload["filename"]
+        digest = payload["sha256"]
+        size = payload["size_bytes"]
+        metadata = payload["metadata"]
+        if (
+            not isinstance(filename, str)
+            or Path(filename).name != filename
+            or filename.startswith(".")
+            or not filename.isprintable()
+            or len(filename.encode("utf-8")) > 184
+            or not filename.lower().endswith(".jar")
+            or not isinstance(digest, str)
+            or not re.fullmatch(r"[a-f0-9]{64}", digest)
+            or isinstance(size, bool)
+            or not isinstance(size, int)
+            or not 0 < size <= 128 * 1024 * 1024
+            or metadata
+            not in {
+                "META-INF/mods.toml",
+                "META-INF/neoforge.mods.toml",
+                "fabric.mod.json",
+                "quilt.mod.json",
+            }
+        ):
+            raise KeyError("mod upload not found")
+        try:
+            jar_stat = jar.lstat()
+        except OSError as exc:
+            raise KeyError("mod upload not found") from exc
+        if (
+            not stat.S_ISREG(jar_stat.st_mode)
+            or jar_stat.st_uid != os.geteuid()
+            or stat.S_IMODE(jar_stat.st_mode) & 0o022
+            or jar_stat.st_size != size
+        ):
+            raise KeyError("mod upload not found")
+        return {
+            "id": upload_id,
+            "filename": filename,
+            "size_bytes": size,
+            "metadata": metadata,
+        }
 
     @staticmethod
     def _mod_record(path: Path) -> dict[str, Any]:

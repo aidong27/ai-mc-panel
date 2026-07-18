@@ -8,9 +8,9 @@ from typing import Any
 
 from .adapters.base import AdapterOperationError, MinecraftAdapter
 from .database import Database, utc_now
-from .models import OperationState, RiskLevel
+from .models import OperationReview, OperationState, RiskLevel
 from .redaction import redact, redact_text
-from .tools import ToolRegistry
+from .tools import ToolRegistry, operation_params_hash
 
 
 class OperationError(RuntimeError):
@@ -53,12 +53,12 @@ class OperationService:
         user_id: int,
         request_id: str,
     ) -> dict[str, Any]:
-        preview = self.registry.preview(action, params)
-        risk = RiskLevel(preview["risk"])
+        spec, normalized = self.registry.validate(action, params)
+        risk = spec.risk
         if risk is RiskLevel.LOW:
             return self._execute(
                 action=action,
-                params=preview["params"],
+                params=normalized,
                 user_id=user_id,
                 request_id=request_id,
                 confirmation_id=None,
@@ -66,8 +66,15 @@ class OperationService:
             )
 
         confirmation_id = "confirm_" + uuid.uuid4().hex
-        canonical = _canonical(preview["params"])
         expires = datetime.now(UTC) + timedelta(minutes=5)
+        preview = self.registry.build_preview(
+            spec,
+            normalized,
+            operation_id=confirmation_id,
+            expires_at=expires.isoformat(),
+        )
+        frozen = {"params": normalized, "review": preview["review"]}
+        canonical = _canonical(frozen)
         self.database.execute(
             """
             INSERT INTO confirmations(
@@ -95,7 +102,7 @@ class OperationService:
             outcome="confirmation_required",
             request_id=request_id,
             confirmation_id=confirmation_id,
-            params=preview["params"],
+            params=normalized,
             result={"expires_at": expires.isoformat()},
         )
         return {**preview, "status": "confirmation_required", "confirmation_id": confirmation_id}
@@ -127,6 +134,31 @@ class OperationService:
         canonical = str(record["params_json"])
         if not hashlib.sha256(canonical.encode()).hexdigest() == str(record["params_hash"]):
             raise OperationError("confirmation_invalid", "确认参数校验失败，请重新发起操作")
+        try:
+            frozen: Any = json.loads(canonical)
+            if not isinstance(frozen, dict) or set(frozen) != {"params", "review"}:
+                raise ValueError("invalid frozen confirmation")
+            frozen_params = frozen["params"]
+            if not isinstance(frozen_params, dict):
+                raise ValueError("invalid frozen params")
+            frozen_review = frozen["review"]
+            if not isinstance(frozen_review, dict):
+                raise ValueError("invalid frozen review")
+            review = OperationReview.model_validate_json(_canonical(frozen_review))
+            spec, params = self.registry.validate(str(record["action"]), frozen_params)
+        except (TypeError, ValueError) as exc:
+            raise OperationError(
+                "confirmation_invalid", "确认内容校验失败，请重新发起操作"
+            ) from exc
+        if (
+            params != frozen_params
+            or spec.risk is not risk
+            or review.operation_id != confirmation_id
+            or review.risk is not risk
+            or review.params_hash != operation_params_hash(str(record["action"]), params)
+            or review.expires_at != str(record["expires_at"])
+        ):
+            raise OperationError("confirmation_invalid", "确认内容已变化，请重新发起操作")
         now = utc_now()
         if risk is RiskLevel.HIGH:
             if state is OperationState.PENDING and not second:
@@ -151,6 +183,7 @@ class OperationService:
                     "status": "second_confirmation_required",
                     "confirmation_id": confirmation_id,
                     "prompt": f"请输入服务器名称 {self.server_name} 完成第二次确认",
+                    "review": review.model_dump(mode="json"),
                 }
             if state is not OperationState.FIRST_CONFIRMED or not second:
                 raise OperationError("confirmation_required", "需要完成两次确认")
@@ -159,7 +192,6 @@ class OperationService:
         elif second or state is not OperationState.PENDING:
             raise OperationError("confirmation_invalid", "当前确认状态不允许执行")
 
-        params = json.loads(canonical)
         expected_state = (
             OperationState.FIRST_CONFIRMED if risk is RiskLevel.HIGH else OperationState.PENDING
         )

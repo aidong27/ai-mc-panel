@@ -82,6 +82,7 @@ def main() -> None:
         "MC_PANEL_RECOVERY_ROOT": settings.recovery_root,
         "MC_PANEL_CONSOLE_USER": settings.console_user,
         "MC_PANEL_CONSOLE_SCREEN": settings.console_screen_name,
+        "MC_PANEL_CONSOLE_COMMANDS_ENABLED": str(settings.console_commands_enabled).lower(),
         "MC_PANEL_HELPER_CONFIG_PATH": settings.helper_config_path,
         "MC_PANEL_MINECRAFT_VERSION": settings.minecraft_version_hint,
         "MC_PANEL_LOADER": settings.loader_hint,
