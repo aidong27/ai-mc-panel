@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } fro
 import {
   AlertTriangle,
   FileWarning,
+  LockKeyhole,
   Radio,
   RefreshCw,
   Send,
@@ -27,6 +28,7 @@ interface CrashDetail extends CrashReport {
 interface ServerToolsViewProps {
   refreshKey: number;
   operationBusy: boolean;
+  consoleCommandsEnabled: boolean;
   onOperation: OperationRunner;
   onMessage: (message: string, tone?: "success" | "warning" | "error") => void;
 }
@@ -46,6 +48,7 @@ function logQuery(mode: LogMode): string {
 export function ServerToolsView({
   refreshKey,
   operationBusy,
+  consoleCommandsEnabled,
   onOperation,
   onMessage,
 }: ServerToolsViewProps) {
@@ -217,11 +220,17 @@ export function ServerToolsView({
         </div>
         {logError && <div className="load-error compact" role="alert"><span>{logError}</span><button className="text-button" onClick={() => void loadLogs()}>重试</button></div>}
         <pre className="console-output" aria-label="Minecraft 日志" aria-live="polite">{visibleLogs.join("\n") || emptyLogMessage}</pre>
-        <form className="console-command" onSubmit={submitCommand}>
-          <input value={command} onChange={(event) => setCommand(event.target.value)} maxLength={200} placeholder="输入 Minecraft 控制台命令，例如：say 维护将在 5 分钟后开始" required />
-          <button className="button primary" type="submit" disabled={operationBusy || !command.trim()}><Send size={18} />发送</button>
-        </form>
-        <p className="help-copy">命令只会发送给 Minecraft 控制台，不会进入 Linux Shell；执行前仍会要求确认。</p>
+        {consoleCommandsEnabled ? (
+          <>
+            <form className="console-command" onSubmit={submitCommand}>
+              <input value={command} onChange={(event) => setCommand(event.target.value)} maxLength={200} placeholder="输入 Minecraft 控制台命令，例如：say 维护将在 5 分钟后开始" required />
+              <button className="button primary" type="submit" disabled={operationBusy || !command.trim()}><Send size={18} />发送</button>
+            </form>
+            <p className="help-copy">命令只会发送给 Minecraft 控制台，不会进入 Linux Shell；确认页会逐字展示将发送的内容。</p>
+          </>
+        ) : (
+          <p className="help-copy console-disabled"><LockKeyhole size={17} />通用命令入口已由服务器管理员关闭，日志读取不受影响。</p>
+        )}
       </section>
 
       <section className="panel-section">

@@ -31,6 +31,7 @@ const dashboard: DashboardData = {
   },
   players: { online: 0, maximum: 10, players: [], stale: false },
   ai: { enabled: false, configured: false, model: null, requests_per_minute: 3, requests_per_day: 40, tokens_per_day: 30_000 },
+  capabilities: { console_commands_enabled: false },
   diagnostics: {
     level: "good",
     headline: "当前没有需要立即处理的事项",

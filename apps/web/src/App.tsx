@@ -273,7 +273,7 @@ export function App() {
       content = <PlayersView players={dashboard.players} refreshKey={refreshKey} operationBusy={operationUnavailable} onOperation={runOperation} />;
       break;
     case "server":
-      content = <ServerToolsView refreshKey={refreshKey} operationBusy={operationUnavailable} onOperation={runOperation} onMessage={showMessage} />;
+      content = <ServerToolsView refreshKey={refreshKey} operationBusy={operationUnavailable} consoleCommandsEnabled={dashboard.capabilities.console_commands_enabled} onOperation={runOperation} onMessage={showMessage} />;
       break;
     case "mods":
       content = <ModsView refreshKey={refreshKey} operationBusy={operationUnavailable} onOperation={runOperation} onMessage={showMessage} />;

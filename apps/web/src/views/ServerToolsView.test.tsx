@@ -31,7 +31,15 @@ describe("ServerToolsView", () => {
       return Promise.reject(new Error(`unexpected path: ${path}`)) as never;
     });
 
-    render(<ServerToolsView refreshKey={0} operationBusy={false} onOperation={async () => true} onMessage={vi.fn()} />);
+    render(
+      <ServerToolsView
+        refreshKey={0}
+        operationBusy={false}
+        consoleCommandsEnabled
+        onOperation={async () => true}
+        onMessage={vi.fn()}
+      />,
+    );
     const output = await screen.findByLabelText("Minecraft 日志");
     await waitFor(() => expect(output.textContent).toContain(useful));
     expect(output.textContent).not.toContain(noisy);
@@ -42,5 +50,28 @@ describe("ServerToolsView", () => {
     await user.click(await screen.findByRole("button", { name: "查看" }));
     expect(await screen.findByText("Example stack trace")).toBeTruthy();
     expect(screen.getByRole("dialog", { name: "crash-test.txt" })).toBeTruthy();
+  });
+
+  it("does not expose the general console command input when the server capability is disabled", async () => {
+    vi.stubGlobal("WebSocket", FakeWebSocket as unknown as typeof WebSocket);
+    vi.spyOn(api, "mutate").mockResolvedValue({ ticket: "ticket" } as never);
+    vi.spyOn(api, "get").mockImplementation((path) => {
+      if (path.startsWith("/logs/recent")) return Promise.resolve({ lines: [] }) as never;
+      if (path === "/crash-reports") return Promise.resolve([]) as never;
+      return Promise.reject(new Error(`unexpected path: ${path}`)) as never;
+    });
+
+    render(
+      <ServerToolsView
+        refreshKey={0}
+        operationBusy={false}
+        consoleCommandsEnabled={false}
+        onOperation={async () => true}
+        onMessage={vi.fn()}
+      />,
+    );
+
+    expect(await screen.findByText(/通用命令入口已由服务器管理员关闭/)).toBeTruthy();
+    expect(screen.queryByPlaceholderText("例如：say 今晚八点重启")).toBeNull();
   });
 });
