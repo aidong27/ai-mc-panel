@@ -190,7 +190,7 @@ export interface BackupInfo {
   created_at: string | number;
   size_bytes: number;
   verified: boolean;
-  verification_status?: "verified" | "checksum_present" | "missing";
+  verification_status?: "verified" | "checksum_present" | "invalid" | "missing";
   kind: string;
   filename?: string;
 }

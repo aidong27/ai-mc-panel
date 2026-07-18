@@ -43,6 +43,25 @@ def _write_helper_config(tmp_path: Path) -> Path:
     return config
 
 
+def _write_valid_backup(
+    backup_root: Path, name: str = "minecraft-20260717-cold.tar.gz"
+) -> tuple[Path, str]:
+    payload = backup_root.parent / "payload"
+    for directory in ("world", "config", "defaultconfigs", "kubejs", "mods"):
+        target = payload / directory
+        target.mkdir(parents=True, exist_ok=True)
+        (target / ".fixture").write_text(directory, encoding="ascii")
+    (payload / "server.properties").write_text("motd=fixture\n", encoding="ascii")
+    backup_root.mkdir(parents=True, exist_ok=True)
+    archive = backup_root / name
+    with tarfile.open(archive, "w:gz") as bundle:
+        for item in ("world", "config", "defaultconfigs", "kubejs", "mods", "server.properties"):
+            bundle.add(payload / item, arcname=item)
+    digest = hashlib.sha256(archive.read_bytes()).hexdigest()
+    Path(str(archive) + ".sha256").write_text(f"{digest}  {archive.name}\n", encoding="ascii")
+    return archive, digest
+
+
 def test_helper_loads_only_a_validated_root_owned_runtime_profile(tmp_path: Path) -> None:
     config = _write_helper_config(tmp_path)
 
@@ -175,16 +194,21 @@ def test_created_backup_is_verified_before_success(
     monkeypatch.setattr(helper, "_run", fake_run)
     monkeypatch.setattr(helper, "_is_active", lambda unit="minecraft.service": True)
     monkeypatch.setattr(helper, "_wait_for_port", lambda port, timeout: True)
-    monkeypatch.setattr(
-        helper.ActionHelper,
-        "_verify_archive",
-        lambda self, path: verified.append(path),
-    )
+
+    def fake_verify(_self: helper.ActionHelper, path: Path) -> helper.VerifiedArchive:
+        verified.append(path)
+        return helper.VerifiedArchive.from_stat(
+            hashlib.sha256(path.read_bytes()).hexdigest(), path.stat()
+        )
+
+    monkeypatch.setattr(helper.ActionHelper, "_verify_archive", fake_verify)
 
     result = helper.ActionHelper(paths).create_backup({})
     assert verified == [archive]
     assert retention == [{"KEEP_BACKUPS": "2"}]
     assert result["sha256"] == hashlib.sha256(archive.read_bytes()).hexdigest()
+    assert result["verified"] is True
+    assert (backup_root / helper.VERIFICATION_DIRECTORY).is_dir()
 
 
 def test_backup_retention_override_rejects_unbounded_environment(
@@ -323,12 +347,96 @@ def test_backup_attempts_to_restart_service_before_reporting_failure(
     monkeypatch.setattr(helper, "_is_active", lambda unit="minecraft.service": next(active))
     monkeypatch.setattr(helper, "_wait_for_port", lambda port, timeout: True)
     monkeypatch.setattr(helper, "_systemctl", lambda action, unit: actions.append(action))
-    monkeypatch.setattr(helper.ActionHelper, "_verify_archive", lambda self, path: None)
+    monkeypatch.setattr(
+        helper.ActionHelper,
+        "_verify_archive",
+        lambda self, path: helper.VerifiedArchive.from_stat(
+            hashlib.sha256(path.read_bytes()).hexdigest(), path.stat()
+        ),
+    )
 
     result = helper.ActionHelper(paths).create_backup({})
 
     assert actions == ["start"]
     assert result["service_active"] is True
+
+
+def test_verify_backup_records_a_persistent_archive_identity(tmp_path: Path) -> None:
+    backup_root = tmp_path / "backups"
+    archive, digest = _write_valid_backup(backup_root)
+    paths = helper.Paths(backup_root=backup_root, lock_file=tmp_path / "action.lock")
+    backup_id = helper.ActionHelper._backup_id(archive)
+
+    response = helper.ActionHelper(paths).execute("verify_backup", {"backup_id": backup_id})
+
+    result = response["result"]
+    assert result["sha256"] == digest
+    assert result["verified"] is True
+    marker = backup_root / helper.VERIFICATION_DIRECTORY / f"{backup_id}.json"
+    record = json.loads(marker.read_text(encoding="utf-8"))
+    archive_stat = archive.stat()
+    assert record["filename"] == archive.name
+    assert record["size_bytes"] == archive_stat.st_size
+    assert record["mtime_ns"] == archive_stat.st_mtime_ns
+    assert record["ctime_ns"] == archive_stat.st_ctime_ns
+    assert record["sha256"] == digest
+    assert marker.stat().st_mode & 0o777 == 0o644
+    assert marker.parent.stat().st_mode & 0o777 == 0o755
+
+
+def test_verify_backup_rejects_an_untrusted_marker_directory(tmp_path: Path) -> None:
+    backup_root = tmp_path / "backups"
+    archive, _ = _write_valid_backup(backup_root)
+    external = tmp_path / "external"
+    external.mkdir()
+    (backup_root / helper.VERIFICATION_DIRECTORY).symlink_to(external, target_is_directory=True)
+    paths = helper.Paths(backup_root=backup_root, lock_file=tmp_path / "action.lock")
+
+    with pytest.raises(helper.HelperError) as error:
+        helper.ActionHelper(paths).verify_backup(
+            {"backup_id": helper.ActionHelper._backup_id(archive)}
+        )
+
+    assert error.value.code == "unsafe_path"
+    assert list(external.iterdir()) == []
+
+
+def test_verify_backup_does_not_follow_a_checksum_symlink(tmp_path: Path) -> None:
+    backup_root = tmp_path / "backups"
+    archive, _ = _write_valid_backup(backup_root)
+    checksum = Path(str(archive) + ".sha256")
+    checksum.unlink()
+    external = tmp_path / "external.sha256"
+    external.write_text("0" * 64 + "\n", encoding="ascii")
+    checksum.symlink_to(external)
+    paths = helper.Paths(backup_root=backup_root, lock_file=tmp_path / "action.lock")
+
+    with pytest.raises(helper.HelperError) as error:
+        helper.ActionHelper(paths).verify_backup(
+            {"backup_id": helper.ActionHelper._backup_id(archive)}
+        )
+
+    assert error.value.code == "backup_verification_failed"
+
+
+def test_restore_extraction_rejects_an_archive_replaced_after_verification(
+    tmp_path: Path,
+) -> None:
+    backup_root = tmp_path / "backups"
+    archive, _ = _write_valid_backup(backup_root)
+    action = helper.ActionHelper(
+        helper.Paths(backup_root=backup_root, lock_file=tmp_path / "action.lock")
+    )
+    verified = action._verify_archive(archive)
+    archive.write_bytes(b"replacement")
+    destination = tmp_path / "staging"
+    destination.mkdir()
+
+    with pytest.raises(helper.HelperError) as error:
+        action._extract_verified_archive(archive, verified, destination)
+
+    assert error.value.code == "backup_verification_failed"
+    assert list(destination.iterdir()) == []
 
 
 def test_backup_verification_failure_still_recovers_minecraft(

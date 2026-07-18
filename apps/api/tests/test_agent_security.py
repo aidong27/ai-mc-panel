@@ -291,3 +291,19 @@ def test_agent_write_tool_calls_only_create_proposals(
     assert len(result["proposed_actions"]) == 1
     assert result["proposed_actions"][0]["action"] == "restart_server"
     assert result["proposed_actions"][0]["requires_confirmation"] is True
+
+
+def test_agent_exposes_backup_verification_as_a_low_risk_proposal(
+    settings: Settings,
+) -> None:
+    service = _service(settings)
+    backup_id = service.adapter.list_backups()[0]["id"]
+    schemas = {item["function"]["name"]: item["function"] for item in service._tool_schemas()}
+
+    preview = service.registry.preview("verify_backup", {"backup_id": backup_id})
+
+    assert "verify_backup" in schemas
+    assert schemas["verify_backup"]["parameters"]["additionalProperties"] is False
+    assert preview["risk"] == "low"
+    assert preview["requires_confirmation"] is False
+    assert preview["stops_server"] is False

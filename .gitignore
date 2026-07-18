@@ -23,6 +23,8 @@ node_modules/
 dist/
 coverage/
 htmlcov/
+playwright-report/
+test-results/
 wheelhouse/
 release/
 uploads/

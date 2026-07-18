@@ -1,6 +1,6 @@
 [project]
 name = "mc-panel-api"
-version = "0.4.0"
+version = "0.4.1"
 description = "Safety-first API for the AI-native Minecraft panel"
 requires-python = ">=3.12,<3.13"
 dependencies = [
@@ -15,7 +15,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
   "mypy>=1.16,<2",
-  "pytest>=8.4,<9",
+  "pytest>=9.0.3,<10",
   "pytest-asyncio>=1,<2",
   "pytest-cov>=6.2,<7",
   "ruff>=0.12,<1",
