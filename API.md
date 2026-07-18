@@ -42,7 +42,7 @@
 
 ## 首页与状态
 
-- `GET /dashboard`：总体状态、玩家、通俗资源结论、自动体检和最近风险提示。
+- `GET /dashboard`：总体状态、玩家、通俗资源结论、自动体检、最近风险提示和服务端能力开关；`capabilities.console_commands_enabled` 决定是否展示手动通用控制台。
 - `GET /diagnostics`：不调用 AI 的确定性服务、磁盘、备份和玩家检查。
 - `GET /server/status`：systemd、Minecraft 启动阶段、版本和受控运行信息。
 - `GET /server/metrics`：CPU、内存、磁盘、TPS 的当前值和通俗分级。
@@ -57,7 +57,7 @@
 - `POST /server/start`
 - `POST /server/stop`
 - `POST /server/restart`
-- `POST /console/commands`：仅 owner，命令长度和字符严格限制。
+- `POST /console/commands`：仅 owner，命令长度和字符严格限制；默认返回 `tool_disabled`，只有 root 显式设置 `MC_PANEL_CONSOLE_COMMANDS_ENABLED=true` 后可用。该工具不进入 AI schema。
 - `POST /console/announcements`：发送普通游戏内公告。
 - `GET /logs/recent?source=latest&limit=200&severity=WARN,ERROR`
 - `GET /crash-reports`
@@ -107,7 +107,24 @@ MVP 不提供模组重新启用或自动兼容修复，不允许后端按任意 
 - `POST /confirmations/{id}/confirm`：第一次确认。
 - `POST /confirmations/{id}/confirm-again`：高风险第二次确认。
 
-确认对象绑定用户、会话、动作、规范化参数哈希和服务器 fingerprint，默认 5 分钟过期，不能跨动作重放。
+中高风险响应包含后端生成的 `review`：
+
+```json
+{
+  "operation_id": "confirm_...",
+  "human_title": "授予管理员权限",
+  "risk": "medium",
+  "review_items": [{"label": "玩家", "value": "Alex"}],
+  "impact": "离线模式下存在用户名冒用风险。",
+  "stops_server": false,
+  "recovery_plan": "无需数据回滚",
+  "assurance_expected": "只确认命令已发送，不证明游戏内效果。",
+  "params_hash": "64-character-sha256",
+  "expires_at": "2026-07-18T05:00:00+00:00"
+}
+```
+
+确认对象绑定用户、动作、服务器 fingerprint，以及同一冻结对象中的规范化参数和 review。数据库整体哈希与 review 内 action + params 哈希都必须匹配，默认 5 分钟过期，不能跨动作重放或用修改后的参数复用。
 
 ## AI
 
@@ -116,7 +133,7 @@ MVP 不提供模组重新启用或自动兼容修复，不允许后端按任意 
 - `GET /ai/settings`：不含密钥的配置状态。
 - `PATCH /ai/settings`：普通参数和 AI 开关；密钥只能在服务器文件配置。
 
-AI 响应包含普通中文解释和只读工具证据；写工具只形成建议，实际提交仍走 `/operations` 与确认状态机。证据来自工具结果，不接受模型自报。
+AI 响应包含普通中文解释和只读工具证据；只有显式标记为 `AI_PROPOSABLE` 的写工具可形成建议，实际提交仍走 `/operations` 与确认状态机。手动专用工具即使由供应商伪造 tool call 也会拒绝。证据来自工具结果，不接受模型自报。
 
 ## 审计
 
@@ -140,6 +157,7 @@ AI 响应包含普通中文解释和只读工具证据；写工具只形成建�
 - `confirmation_required`
 - `confirmation_expired`
 - `operation_in_progress`
+- `tool_disabled`
 - `insufficient_disk_space`
 - `backup_verification_failed`
 - `minecraft_unavailable`

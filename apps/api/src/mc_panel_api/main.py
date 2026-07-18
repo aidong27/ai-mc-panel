@@ -126,7 +126,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app = FastAPI(
         title="方块管家 API",
-        version="0.4.1",
+        version="0.4.2",
         docs_url="/api/docs" if not settings.is_production else None,
         redoc_url=None,
         openapi_url="/api/openapi.json" if not settings.is_production else None,

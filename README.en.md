@@ -2,7 +2,7 @@
 
 AI MC Panel is a safety-first, AI-native control panel for a single Minecraft friends server. Users describe an intent in plain language; the model can only call typed tools, and medium/high-risk actions pass through explicit confirmation gates.
 
-The project is currently `0.4.1-alpha`. It runs on a real modded server, but public deployment still requires a read-only audit and an explicit runtime profile.
+The project is currently `0.4.2-alpha`. It runs on a real modded server, but public deployment still requires a read-only audit and an explicit runtime profile.
 
 ![AI MC Panel dashboard](docs/images/dashboard.jpg)
 
@@ -15,7 +15,8 @@ The project is currently `0.4.1-alpha`. It runs on a real modded server, but pub
 - OpenAI-compatible provider integration with redaction and usage limits.
 - No model-generated shell commands and no root web process.
 - A root-owned helper that accepts only allowlisted JSON operations.
-- Confirmation, recovery points, fingerprint checks and audit events.
+- Explicit read-only, AI-proposable and manual-only tool exposure; the general console is disabled by default and never enters the model schema.
+- Server-generated confirmation reviews with frozen exact parameters, recovery points, fingerprint checks and audit events.
 - Responsive Simplified Chinese UI with light and dark themes.
 - Playwright browser acceptance tests for sessions, confirmations and mobile navigation.
 

@@ -19,7 +19,8 @@
 - Minecraft/Forge/Fabric/NeoForge/Quilt 元数据识别。
 - 日志截断、去重和敏感信息脱敏。
 - 密码哈希、会话过期、CSRF 和角色权限。
-- 风险分级、确认过期、参数哈希和防重放。
+- 风险分级、确认过期、冻结 review、参数哈希和防重放。
+- Agent schema 暴露等级、手动工具拒绝和文档/runtime 严格同步。
 - AI 限流、每日额度、超时和 provider 失败降级。
 - SQLite 初始化、操作状态和审计写入。
 
@@ -40,6 +41,7 @@
 - 未登录 API 和 WebSocket 全部拒绝。
 - 登录、退出撤销、CSRF、Origin 和 WebSocket ticket。
 - 中风险无确认不执行，高风险只确认一次不执行。
+- 中高风险确认展示精确目标；冻结参数或 review 变化后旧确认 ID 拒绝执行。
 - AI 关闭或 provider 失败时传统功能正常。
 - 服务器 fingerprint 变化后写工具全部锁定。
 
@@ -53,12 +55,12 @@
 - 页面刷新后会话、主题和操作进度正确恢复。
 - 手机导航抽屉、主题切换和中风险确认弹窗已完成交互验收；取消后服务状态不变。
 - 浏览器控制台无 warning/error；公开截图只使用 mock 服务器和虚构玩家。
-- Playwright CI 实际覆盖登录后刷新、中风险取消、高风险二次确认、备份完整校验、移动导航、主题持久化和退出。
+- Playwright CI 实际覆盖登录后刷新、中风险取消、高风险二次确认、AI 提案精确参数、手动命令逐字确认、备份完整校验、移动导航、主题持久化和退出。
 
-## 0.4.1 Alpha 基线
+## 0.4.2 Alpha 基线
 
-- 后端：137 个 pytest 测试通过，Ruff 与 strict mypy 通过，覆盖率 79%。
-- 前端：12 个 Vitest 文件、24 个测试通过，2 个 Playwright Chromium 场景通过，TypeScript/Vite 构建通过。
+- 后端：148 个 pytest 测试通过，Ruff 与 strict mypy 通过，覆盖率 79%。
+- 前端：12 个 Vitest 文件、26 个测试通过，3 个 Playwright Chromium 场景通过，TypeScript/Vite 构建通过。
 - 运行依赖：`npm audit --omit=dev` 为 0 个已知漏洞。
 - 部署资源：全部 Shell 脚本通过 `bash -n`，运行 profile 的权限、拒绝覆盖和密钥不回显均有自动测试。
 
