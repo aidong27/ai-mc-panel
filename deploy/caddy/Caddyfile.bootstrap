@@ -1,0 +1,9 @@
+http://{$MC_PANEL_HOST} {
+    @acme path /.well-known/acme-challenge/*
+    handle @acme {
+        root * /var/www/mc-panel-acme
+        file_server
+    }
+
+    respond 404
+}

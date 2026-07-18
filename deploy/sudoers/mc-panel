@@ -1,0 +1,3 @@
+# The empty argument string means this command may be run with no CLI arguments.
+# All request data is bounded JSON on stdin and is revalidated by the helper.
+mc-panel ALL=(root) NOPASSWD: /usr/local/libexec/mc-panel-action ""

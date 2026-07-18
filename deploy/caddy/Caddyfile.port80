@@ -1,0 +1,37 @@
+{
+    default_sni {$MC_PANEL_HOST}
+    auto_https disable_redirects
+    servers {
+        protocols h1 h2
+    }
+}
+
+http://{$MC_PANEL_HOST}:8080 {
+    bind 127.0.0.1
+
+    @acme path /.well-known/acme-challenge/*
+    handle @acme {
+        root * /var/www/mc-panel-acme
+        file_server
+    }
+
+    handle {
+        redir https://{$MC_PANEL_HOST}:{$MC_PANEL_PUBLIC_PORT:80}{uri} 308
+    }
+}
+
+https://{$MC_PANEL_HOST}:8443 {
+    bind 127.0.0.1
+    tls /etc/caddy/certs/mc-panel/fullchain.pem /etc/caddy/certs/mc-panel/privkey.pem
+
+    encode gzip
+    reverse_proxy 127.0.0.1:{$MC_PANEL_PORT:18080}
+
+    header {
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "DENY"
+        Referrer-Policy "no-referrer"
+        X-Robots-Tag "noindex, nofollow, noarchive"
+        -Server
+    }
+}
