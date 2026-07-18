@@ -7,7 +7,7 @@
 
 一个面向 Minecraft 好友服的 AI 原生、安全优先管理面板。用户描述想做什么，AI 只能调用受约束工具；中高风险操作必须经过确认，模型永远拿不到任意 Shell。
 
-> 当前版本：`0.4.0-alpha`。项目已经在单机大型模组服上运行，但公开安装流程仍要求管理员完成只读审计。请不要把未经核对的生产服务器当作测试环境。
+> 当前版本：`0.4.1-alpha`。项目已经在单机大型模组服上运行，但公开安装流程仍要求管理员完成只读审计。请不要把未经核对的生产服务器当作测试环境。
 
 ![方块管家首页](docs/images/dashboard.jpg)
 
@@ -26,7 +26,7 @@
 - Forge、NeoForge、Fabric、Quilt 与 Vanilla 的日志/文件结构识别。
 - 玩家活跃持久化，只保存玩家名和登录时间，不保存 IP 或原始日志行。
 - 模组元数据、重复项提示、白名单、OP 和安全字段配置。
-- 手动/定时备份状态、校验信息、恢复前保护点和失败回滚。
+- 手动/定时备份、可失效的完整校验凭据、恢复前保护点和失败回滚。
 - OpenAI 兼容 AI 接口、调用限额、日志压缩、脱敏和受约束工具。
 - 中风险一次确认、高风险二次确认、服务器 fingerprint 与完整审计日志。
 - 简体中文、移动端、亮色/深色模式。
@@ -97,6 +97,7 @@ apps/web/          React + TypeScript 中文界面
 helper/            root 所有的固定特权操作入口
 deploy/            systemd、Caddy、HAProxy 和可回滚部署脚本
 tests/fixtures/    mock 服务器数据
+tests/e2e/         隔离的浏览器验收服务
 docs/              截图、路线图和公开项目文档
 ```
 
@@ -104,14 +105,16 @@ docs/              截图、路线图和公开项目文档
 
 ```bash
 cd apps/api
-.venv/bin/ruff format --check src tests ../../helper ../../deploy/scripts
-.venv/bin/ruff check src tests ../../helper ../../deploy/scripts
+.venv/bin/ruff format --check src tests ../../helper ../../deploy/scripts ../../tests/e2e
+.venv/bin/ruff check src tests ../../helper ../../deploy/scripts ../../tests/e2e
 .venv/bin/mypy src
 .venv/bin/pytest
 
 cd ../web
 npm test
 npm run build
+npx playwright install chromium
+npm run test:e2e
 npm audit --omit=dev
 ```
 

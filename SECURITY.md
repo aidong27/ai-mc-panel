@@ -70,6 +70,8 @@ API 进程只拥有 `/var/lib/mc-panel` 和 `/run/mc-panel` 的 Unix 写权限�
 - 文件对象由后端 ID 映射到固定根目录，关键根目录和目标对象会检查类型并拒绝软链接；不接受用户路径。
 - 子进程使用 argv 数组、清空环境、固定 PATH、超时和输出上限。
 - `server.properties` 使用同目录临时文件、fsync、原子替换并保持所有者和模式；模组使用校验后的 staging 与原子移动，systemd drop-in 失败时恢复原文件。
+- 备份校验文件和归档通过 `O_NOFOLLOW` 文件描述符有界读取；校验凭据保存在备份根目录下 root 所有的 `.mc-panel-verifications/`。
+- 校验凭据绑定大小、mtime、ctime、设备、inode 和 SHA-256；恢复从同一已验证文件身份提取，文件被替换或修改即拒绝。
 - helper 不提供通用 `run`、`shell`、`read_file`、`write_file` 或 `delete` 动作。
 
 ## 风险等级

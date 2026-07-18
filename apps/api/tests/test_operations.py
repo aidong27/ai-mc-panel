@@ -23,6 +23,26 @@ def test_low_risk_backup_executes_and_is_audited(
     assert audit[0]["outcome"] == "succeeded"
 
 
+def test_low_risk_backup_verification_executes_without_confirmation(
+    logged_in: tuple[TestClient, dict[str, str]],
+) -> None:
+    client, headers = logged_in
+    before = client.get("/api/v1/backups").json()["data"]
+    backup_id = before[0]["id"]
+    assert before[0]["verification_status"] == "checksum_present"
+
+    response = client.post(f"/api/v1/backups/{backup_id}/verify", headers=headers)
+
+    assert response.status_code == 200
+    assert response.json()["data"]["status"] == "succeeded"
+    after = client.get("/api/v1/backups").json()["data"]
+    assert after[0]["verified"] is True
+    assert after[0]["verification_status"] == "verified"
+    audit = client.get("/api/v1/audit-events").json()["data"]
+    assert audit[0]["action"] == "verify_backup"
+    assert audit[0]["risk"] == "low"
+
+
 def test_restart_needs_confirmation_and_only_runs_after_confirm(
     logged_in: tuple[TestClient, dict[str, str]],
 ) -> None:

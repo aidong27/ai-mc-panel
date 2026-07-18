@@ -17,7 +17,9 @@ import tempfile
 import time
 import uuid
 import zipfile
+from contextlib import suppress
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 from typing import Any, NoReturn
 
@@ -46,6 +48,8 @@ TARGETS = (
     "user_jvm_args.txt",
 )
 ALLOWED_ARCHIVE_ROOTS = TARGETS + ("eula.txt",)
+VERIFICATION_DIRECTORY = ".mc-panel-verifications"
+MAX_CHECKSUM_SIZE = 4096
 
 
 class HelperError(RuntimeError):
@@ -84,7 +88,8 @@ class Paths:
             if config_stat.st_uid != expected_uid or stat.S_IMODE(config_stat.st_mode) != 0o600:
                 raise HelperError("unsafe_config", "Helper configuration ownership is unsafe")
             raw = json.loads(
-                path.read_text(encoding="utf-8"), object_pairs_hook=_reject_duplicate_keys
+                path.read_text(encoding="utf-8"),
+                object_pairs_hook=_reject_duplicate_keys,
             )
         except HelperError:
             raise
@@ -166,6 +171,37 @@ class Paths:
             console_user=console_user,
             console_screen_name=screen_name,
             backup_archive_glob=archive_glob,
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class VerifiedArchive:
+    sha256: str
+    size_bytes: int
+    mtime_ns: int
+    ctime_ns: int
+    device: int
+    inode: int
+
+    @classmethod
+    def from_stat(cls, digest: str, value: os.stat_result) -> VerifiedArchive:
+        return cls(
+            sha256=digest,
+            size_bytes=value.st_size,
+            mtime_ns=value.st_mtime_ns,
+            ctime_ns=value.st_ctime_ns,
+            device=value.st_dev,
+            inode=value.st_ino,
+        )
+
+    def matches(self, value: os.stat_result) -> bool:
+        return (
+            stat.S_ISREG(value.st_mode)
+            and self.size_bytes == value.st_size
+            and self.mtime_ns == value.st_mtime_ns
+            and self.ctime_ns == value.st_ctime_ns
+            and self.device == value.st_dev
+            and self.inode == value.st_ino
         )
 
 
@@ -348,6 +384,7 @@ class ActionHelper:
             "send_announcement": self.send_announcement,
             "send_console_command": self.send_console_command,
             "create_backup": self.create_backup,
+            "verify_backup": self.verify_backup,
             "edit_server_property": self.edit_server_property,
             "add_whitelist_player": self.add_whitelist_player,
             "remove_whitelist_player": self.remove_whitelist_player,
@@ -434,7 +471,8 @@ class ActionHelper:
             checksum = Path(str(archive) + ".sha256")
             if not checksum.is_file() or checksum.is_symlink():
                 raise HelperError("verification_failed", "Backup checksum was not created safely")
-            self._verify_archive(archive)
+            verified = self._verify_archive(archive)
+            verified_at = self._record_verified_archive(archive, verified)
         except HelperError as backup_exc:
             try:
                 self._ensure_minecraft_ready(timeout=180)
@@ -458,9 +496,27 @@ class ActionHelper:
             ) from exc
         return {
             "filename": archive.name,
-            "size_bytes": archive.stat().st_size,
-            "sha256": _hash_file(archive),
+            "size_bytes": verified.size_bytes,
+            "sha256": verified.sha256,
+            "verified": True,
+            "verified_at": verified_at,
             "service_active": True,
+        }
+
+    def verify_backup(self, params: dict[str, Any]) -> dict[str, Any]:
+        _exact_keys(params, {"backup_id"})
+        backup_id = params["backup_id"]
+        if not isinstance(backup_id, str) or not re.fullmatch(r"backup_[a-f0-9]{12}", backup_id):
+            raise HelperError("validation_failed", "Backup ID is invalid")
+        archive = self._find_backup(backup_id)
+        verified = self._verify_archive(archive)
+        verified_at = self._record_verified_archive(archive, verified)
+        return {
+            "filename": archive.name,
+            "size_bytes": verified.size_bytes,
+            "sha256": verified.sha256,
+            "verified": True,
+            "verified_at": verified_at,
         }
 
     def _ensure_minecraft_ready(self, *, timeout: int) -> None:
@@ -813,7 +869,8 @@ class ActionHelper:
         if not isinstance(backup_id, str) or not re.fullmatch(r"backup_[a-f0-9]{12}", backup_id):
             raise HelperError("validation_failed", "Backup ID is invalid")
         archive = self._find_backup(backup_id)
-        self._verify_archive(archive)
+        verified_archive = self._verify_archive(archive)
+        self._record_verified_archive(archive, verified_archive)
         self._ensure_recovery_root()
         for name in TARGETS:
             current = self.paths.server_root / name
@@ -835,7 +892,9 @@ class ActionHelper:
         if not safety_backups:
             raise HelperError("verification_failed", "Restore safety backup was not created")
         safety_backup = safety_backups[-1]
-        self._verify_archive(safety_backup)
+        verified_safety_backup = self._verify_archive(safety_backup)
+        self._record_verified_archive(safety_backup, verified_safety_backup)
+        self._assert_archive_identity(archive, verified_archive)
         try:
             _systemctl("stop", self.paths.server_service)
             if _is_active(self.paths.server_service):
@@ -865,9 +924,7 @@ class ActionHelper:
         try:
             staging.mkdir(mode=0o700)
             recovery.mkdir(parents=True, mode=0o700)
-            with tarfile.open(archive, "r:gz") as bundle:
-                self._validate_members(bundle.getmembers())
-                bundle.extractall(staging, filter="data")
+            self._extract_verified_archive(archive, verified_archive, staging)
             uid, gid = _server_ids(self.paths.console_user)
             for name in TARGETS:
                 incoming = staging / name
@@ -974,32 +1031,260 @@ class ActionHelper:
 
     def _find_backup(self, backup_id: str) -> Path:
         for candidate in self.paths.backup_root.glob(self.paths.backup_archive_glob):
-            candidate_id = "backup_" + hashlib.sha256(candidate.name.encode()).hexdigest()[:12]
+            candidate_id = self._backup_id(candidate)
             if candidate_id == backup_id and candidate.is_file() and not candidate.is_symlink():
                 return candidate
         raise HelperError("not_found", "Backup was not found")
 
-    def _verify_archive(self, archive: Path) -> None:
+    @staticmethod
+    def _backup_id(archive: Path) -> str:
+        return "backup_" + hashlib.sha256(archive.name.encode()).hexdigest()[:12]
+
+    def _verify_archive(self, archive: Path) -> VerifiedArchive:
         checksum = Path(str(archive) + ".sha256")
-        if not checksum.is_file() or checksum.is_symlink():
-            raise HelperError("backup_verification_failed", "Backup checksum file is missing")
-        expected = checksum.read_text(encoding="ascii", errors="strict").split()[0]
-        if not re.fullmatch(r"[a-f0-9]{64}", expected) or _hash_file(archive) != expected:
-            raise HelperError("backup_verification_failed", "Backup checksum does not match")
-        with tarfile.open(archive, "r:gz") as bundle:
-            members = bundle.getmembers()
-            self._validate_members(members)
-            roots = {PurePosixPath(member.name).parts[0] for member in members if member.name}
-            required = {
-                "world",
-                "config",
-                "defaultconfigs",
-                "kubejs",
-                "mods",
-                "server.properties",
+        flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+        try:
+            checksum_descriptor = os.open(checksum, flags)
+        except OSError as exc:
+            raise HelperError(
+                "backup_verification_failed", "Backup checksum file is missing"
+            ) from exc
+        try:
+            with os.fdopen(checksum_descriptor, "rb") as checksum_handle:
+                checksum_stat = os.fstat(checksum_handle.fileno())
+                if (
+                    not stat.S_ISREG(checksum_stat.st_mode)
+                    or checksum_stat.st_size <= 0
+                    or checksum_stat.st_size > MAX_CHECKSUM_SIZE
+                ):
+                    raise HelperError(
+                        "backup_verification_failed", "Backup checksum file is invalid"
+                    )
+                raw_checksum = checksum_handle.read(MAX_CHECKSUM_SIZE + 1)
+                if len(raw_checksum) > MAX_CHECKSUM_SIZE:
+                    raise HelperError(
+                        "backup_verification_failed", "Backup checksum file is invalid"
+                    )
+                checksum_tokens = raw_checksum.decode("ascii", errors="strict").split()
+        except HelperError:
+            raise
+        except (OSError, UnicodeError) as exc:
+            raise HelperError(
+                "backup_verification_failed", "Backup checksum file could not be read"
+            ) from exc
+        if not checksum_tokens or not re.fullmatch(r"[a-f0-9]{64}", checksum_tokens[0]):
+            raise HelperError("backup_verification_failed", "Backup checksum file is invalid")
+        expected = checksum_tokens[0]
+
+        try:
+            descriptor = os.open(archive, flags)
+        except OSError as exc:
+            raise HelperError("backup_verification_failed", "Backup archive is unsafe") from exc
+        try:
+            with os.fdopen(descriptor, "rb") as handle:
+                initial = os.fstat(handle.fileno())
+                if not stat.S_ISREG(initial.st_mode):
+                    raise HelperError("backup_verification_failed", "Backup archive is unsafe")
+                digest = hashlib.sha256()
+                for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                    digest.update(chunk)
+                hashed = os.fstat(handle.fileno())
+                identity = VerifiedArchive.from_stat(digest.hexdigest(), initial)
+                if not identity.matches(hashed):
+                    raise HelperError(
+                        "backup_verification_failed",
+                        "Backup changed while it was being checked",
+                    )
+                if identity.sha256 != expected:
+                    raise HelperError(
+                        "backup_verification_failed", "Backup checksum does not match"
+                    )
+                handle.seek(0)
+                try:
+                    with tarfile.open(fileobj=handle, mode="r:gz") as bundle:
+                        members = bundle.getmembers()
+                        self._validate_members(members)
+                        roots = {
+                            PurePosixPath(member.name).parts[0] for member in members if member.name
+                        }
+                except (OSError, tarfile.TarError) as exc:
+                    raise HelperError(
+                        "backup_verification_failed", "Backup archive could not be read"
+                    ) from exc
+                final = os.fstat(handle.fileno())
+                if not identity.matches(final):
+                    raise HelperError(
+                        "backup_verification_failed",
+                        "Backup changed while it was being checked",
+                    )
+        except HelperError:
+            raise
+        except OSError as exc:
+            raise HelperError(
+                "backup_verification_failed", "Backup archive could not be read"
+            ) from exc
+        try:
+            path_stat = archive.lstat()
+        except OSError as exc:
+            raise HelperError("backup_verification_failed", "Backup archive disappeared") from exc
+        if not identity.matches(path_stat):
+            raise HelperError(
+                "backup_verification_failed",
+                "Backup changed while it was being checked",
+            )
+        required = {
+            "world",
+            "config",
+            "defaultconfigs",
+            "kubejs",
+            "mods",
+            "server.properties",
+        }
+        if not required.issubset(roots):
+            raise HelperError("backup_verification_failed", "Backup is missing required data")
+        return identity
+
+    @staticmethod
+    def _assert_archive_identity(archive: Path, verified: VerifiedArchive) -> None:
+        try:
+            value = archive.lstat()
+        except OSError as exc:
+            raise HelperError("backup_verification_failed", "Backup archive disappeared") from exc
+        if not verified.matches(value):
+            raise HelperError("backup_verification_failed", "Backup changed after it was checked")
+
+    def _extract_verified_archive(
+        self, archive: Path, verified: VerifiedArchive, destination: Path
+    ) -> None:
+        flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+        try:
+            descriptor = os.open(archive, flags)
+        except OSError as exc:
+            raise HelperError("backup_verification_failed", "Backup archive is unsafe") from exc
+        try:
+            with os.fdopen(descriptor, "rb") as handle:
+                if not verified.matches(os.fstat(handle.fileno())):
+                    raise HelperError(
+                        "backup_verification_failed", "Backup changed before extraction"
+                    )
+                with tarfile.open(fileobj=handle, mode="r:gz") as bundle:
+                    members = bundle.getmembers()
+                    self._validate_members(members)
+                    bundle.extractall(destination, members=members, filter="data")
+                if not verified.matches(os.fstat(handle.fileno())):
+                    raise HelperError(
+                        "backup_verification_failed", "Backup changed during extraction"
+                    )
+        except HelperError:
+            raise
+        except (OSError, tarfile.TarError) as exc:
+            raise HelperError(
+                "backup_verification_failed", "Backup archive could not be extracted"
+            ) from exc
+        self._assert_archive_identity(archive, verified)
+
+    def _record_verified_archive(self, archive: Path, verified: VerifiedArchive) -> str:
+        self._assert_archive_identity(archive, verified)
+        root = self.paths.backup_root / VERIFICATION_DIRECTORY
+        if self.paths.backup_root.is_symlink() or not self.paths.backup_root.is_dir():
+            raise HelperError("unsafe_path", "Backup root is unsafe")
+        created = False
+        try:
+            root.mkdir(mode=0o755)
+            created = True
+        except FileExistsError:
+            pass
+        except OSError as exc:
+            raise HelperError(
+                "backup_verification_failed",
+                "Backup verification store could not be created",
+            ) from exc
+        directory_flags = (
+            os.O_RDONLY
+            | getattr(os, "O_CLOEXEC", 0)
+            | getattr(os, "O_DIRECTORY", 0)
+            | getattr(os, "O_NOFOLLOW", 0)
+        )
+        try:
+            directory = os.open(root, directory_flags)
+        except OSError as exc:
+            raise HelperError("unsafe_path", "Backup verification store is unsafe") from exc
+        try:
+            root_stat = os.fstat(directory)
+            if not stat.S_ISDIR(root_stat.st_mode) or root_stat.st_uid != os.geteuid():
+                raise HelperError("unsafe_path", "Backup verification store is unsafe")
+            if created:
+                os.fchmod(directory, 0o755)
+                root_stat = os.fstat(directory)
+            if stat.S_IMODE(root_stat.st_mode) != 0o755:
+                raise HelperError("unsafe_path", "Backup verification store is unsafe")
+
+            verified_at = datetime.now(UTC).isoformat()
+            payload = {
+                "version": 1,
+                "backup_id": self._backup_id(archive),
+                "filename": archive.name,
+                "size_bytes": verified.size_bytes,
+                "mtime_ns": verified.mtime_ns,
+                "ctime_ns": verified.ctime_ns,
+                "device": verified.device,
+                "inode": verified.inode,
+                "sha256": verified.sha256,
+                "verified_at": verified_at,
             }
-            if not required.issubset(roots):
-                raise HelperError("backup_verification_failed", "Backup is missing required data")
+            destination_name = f"{payload['backup_id']}.json"
+            temporary_name = ".verify-" + uuid.uuid4().hex
+            temporary_created = False
+            try:
+                descriptor = os.open(
+                    temporary_name,
+                    os.O_WRONLY
+                    | os.O_CREAT
+                    | os.O_EXCL
+                    | getattr(os, "O_CLOEXEC", 0)
+                    | getattr(os, "O_NOFOLLOW", 0),
+                    0o600,
+                    dir_fd=directory,
+                )
+                temporary_created = True
+                with os.fdopen(descriptor, "w", encoding="utf-8", newline="\n") as handle:
+                    json.dump(
+                        payload,
+                        handle,
+                        ensure_ascii=True,
+                        sort_keys=True,
+                        separators=(",", ":"),
+                    )
+                    handle.write("\n")
+                    handle.flush()
+                    os.fchmod(handle.fileno(), 0o644)
+                    os.fsync(handle.fileno())
+                os.replace(
+                    temporary_name,
+                    destination_name,
+                    src_dir_fd=directory,
+                    dst_dir_fd=directory,
+                )
+                temporary_created = False
+                os.fsync(directory)
+            finally:
+                if temporary_created:
+                    with suppress(FileNotFoundError):
+                        os.unlink(temporary_name, dir_fd=directory)
+            visible_root = root.lstat()
+            if visible_root.st_dev != root_stat.st_dev or visible_root.st_ino != root_stat.st_ino:
+                os.unlink(destination_name, dir_fd=directory)
+                raise HelperError("unsafe_path", "Backup verification store moved")
+            return verified_at
+        except HelperError:
+            raise
+        except OSError as exc:
+            raise HelperError(
+                "backup_verification_failed",
+                "Backup verification result could not be saved",
+            ) from exc
+        finally:
+            os.close(directory)
 
     @staticmethod
     def _validate_members(members: list[tarfile.TarInfo]) -> None:
@@ -1022,7 +1307,10 @@ class ActionHelper:
 
 
 def _fail(error: HelperError) -> NoReturn:
-    payload = {"ok": False, "error": {"code": error.code, "message": error.message}}
+    payload: dict[str, Any] = {
+        "ok": False,
+        "error": {"code": error.code, "message": error.message},
+    }
     if error.details:
         payload["error"]["details"] = error.details
     encoded = json.dumps(payload, ensure_ascii=True)

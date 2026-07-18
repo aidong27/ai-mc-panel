@@ -43,6 +43,34 @@ def test_healthy_diagnostics_explain_backup_without_overclaiming_verification() 
     assert "恢复时仍会再做完整校验" in backup["detail"]
 
 
+def test_invalid_checksum_is_visible_as_a_backup_warning() -> None:
+    now = datetime(2026, 7, 17, 8, tzinfo=UTC)
+    result = build_diagnostics(
+        status={
+            "healthy": True,
+            "loader": "Forge",
+            "minecraft_version": "1.20.1",
+            "java_version": "17",
+        },
+        metrics={"disk_used_bytes": 20, "disk_total_bytes": 100},
+        players={"online": 0, "stale": False},
+        backups=[
+            {
+                "created_at": (now - timedelta(hours=1)).isoformat(),
+                "verification_status": "invalid",
+            }
+        ],
+        schedule={"hour": 3, "minute": 30, "keep": 7},
+        crashes=[],
+        now=now,
+    )
+
+    backup = next(item for item in result["checks"] if item["id"] == "backup")
+    assert result["level"] == "attention"
+    assert backup["tone"] == "warning"
+    assert "校验文件格式无效" in backup["detail"]
+
+
 def test_diagnostics_raise_attention_for_low_disk_and_old_backup() -> None:
     now = datetime(2026, 7, 16, 8, tzinfo=UTC)
     result = build_diagnostics(
